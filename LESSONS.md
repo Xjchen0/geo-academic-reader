@@ -7,7 +7,7 @@ Observations from running this workspace on real papers. The theme is the same t
 ## [tags: architecture, evidence, separation] Scripts Extract, Agents Interpret
 
 - The most damaging failure was a generator that produced plausible paragraphs and sample equations for every paper. It made notes look complete while destroying trust in them.
-- The current contract is narrow on purpose: `.raw/<slug>/paper.json`, `fulltext.md`, `figures/manifest.json`, and `assets/<slug>/` only. No review text is generated.
+- The current contract is narrow on purpose: `.raw/<slug>/paper.json`, `fulltext.md`, `figures/manifest.json`, and `papers/assets/<slug>/` only. No review text is generated.
 - When a note looks thin, the fix is better evidence or an honest `原文未提供`, not a more fluent template.
 - If the evidence pack and the note disagree about figure origin, the manifest wins.
 
@@ -40,10 +40,12 @@ Observations from running this workspace on real papers. The theme is the same t
 - Persist intermediate findings to the note or a scratch file instead of repeating them in chat.
 - For a batch, process one paper at a time: extract → write → QA → index. Do not extract all papers first and then try to hold them all in context.
 
-## [tags: qa, vscode, images] Preview Failures Are Usually Paths
+## [tags: qa, vscode, images] Preview Failures Are Usually Workspace Roots
 
-- Notes live in `papers/`; images live in `assets/<slug>/`. The only correct link is `../assets/<slug>/fig_XX.png`.
-- `--check-note --fix` catches missing files, zero-byte files, invalid magic bytes, paths outside `assets/`, and non-standard relative paths.
+- Notes live in `papers/`; images live in `papers/assets/<slug>/`. The only correct link is `assets/<slug>/fig_XX.png`.
+- VS Code's Markdown preview restricts local images to the workspace folder. A project-root `assets/` breaks whenever the user opens `papers/` or a single file, while editor hover still works because it resolves the file differently. That mismatch produced a long false trail before the root cause was clear.
+- Keep the figure library inside `papers/` so every plausible workspace root contains it.
+- `--check-note --fix` catches missing files, zero-byte files, invalid magic bytes, legacy root assets, and non-standard relative paths, and migrates legacy figures.
 - A zero-byte or HTML file with a `.png` extension is worse than a missing figure because it looks present. Validate magic bytes.
 - Do not "fix" a report by deleting figures. Fix the path or report the missing evidence.
 

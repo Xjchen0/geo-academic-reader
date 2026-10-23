@@ -13,9 +13,18 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import unquote
 
 from scripts.browser import chrome_launch_command, chrome_status, ensure_chrome, find_chrome
-from scripts.config import PROFILE_PATH, PROJECT_ROOT, load_profile
+from scripts.config import (
+    ASSETS_DIR,
+    LEGACY_ASSETS_DIR,
+    PAPERS_DIR,
+    PROFILE_PATH,
+    PROJECT_ROOT,
+    load_profile,
+    profile_exists,
+)
 from scripts.version import __version__
 
 REQUIRED_PACKAGES = [
@@ -111,6 +120,39 @@ def auto_install(missing, pm_info):
         _fail("Installation failed; run the command manually.")
 
 
+def _unmigrated_legacy_assets():
+    """Count note-referenced figures that still exist only in legacy root assets/."""
+    if not LEGACY_ASSETS_DIR.exists():
+        return 0
+    from scripts.note_check import HTML_IMAGE_RE, MD_IMAGE_RE
+
+    missing = 0
+    for note in PAPERS_DIR.glob("*.md"):
+        if note.name.lower() == "index.md":
+            continue
+        try:
+            text = note.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        refs = [m.group(1) or m.group(2) or "" for m in MD_IMAGE_RE.finditer(text)]
+        refs += [m.group(1) for m in HTML_IMAGE_RE.finditer(text)]
+        for ref in refs:
+            clean = os.path.normpath(unquote(ref.split("#", 1)[0]))
+            parts = Path(clean).parts
+            slug = relative = ""
+            if len(parts) >= 2 and parts[0] == "assets":
+                slug, relative = parts[1], Path(*parts[2:])
+            elif len(parts) >= 3 and parts[0] == ".." and parts[1] == "assets":
+                slug, relative = parts[2], Path(*parts[3:])
+            if not slug or not relative:
+                continue
+            legacy = LEGACY_ASSETS_DIR / slug / relative
+            canonical = ASSETS_DIR / slug / relative
+            if legacy.is_file() and not canonical.is_file():
+                missing += 1
+    return missing
+
+
 def build_report(args):
     pm_info = detect_package_manager()
     installed, missing = check_packages(REQUIRED_PACKAGES)
@@ -144,7 +186,7 @@ def build_report(args):
         },
         "profile": {
             "path": str(PROFILE_PATH),
-            "exists": PROFILE_PATH.exists(),
+            "exists": profile_exists(),
             "values": profile,
         },
         "vscode": {
@@ -154,7 +196,13 @@ def build_report(args):
         "workspace": {
             "root": str(PROJECT_ROOT),
             "papers": str(PROJECT_ROOT / "papers"),
-            "assets": str(PROJECT_ROOT / "assets"),
+            "assets": str(ASSETS_DIR),
+            "legacy_assets": str(LEGACY_ASSETS_DIR),
+            "legacy_assets_present": (
+                LEGACY_ASSETS_DIR.exists()
+                and any(path.is_file() for path in LEGACY_ASSETS_DIR.rglob("*"))
+            ),
+            "legacy_assets_unmigrated": _unmigrated_legacy_assets(),
             "raw": str(PROJECT_ROOT / ".raw"),
         },
     }
@@ -207,7 +255,8 @@ def print_report(report):
             browser=values.get("browser"), depth=values.get("note_depth")
         ))
     else:
-        _warn("No profile yet. Run: python3 main.py --setup")
+        _info("No profile yet. This is expected before the first conversation.")
+        _info("In the agent chat, say: 开始使用 / Start. No setup script is needed.")
     if report["vscode"]["exists"]:
         _ok("VS Code settings: {}".format(report["vscode"]["settings"]))
     else:
@@ -216,9 +265,17 @@ def print_report(report):
     _print_header("Workspace Directories")
     for name in ("root", "papers", "assets", "raw"):
         _info("{}: {}".format(name, report["workspace"][name]))
+    if report["workspace"]["legacy_assets_present"]:
+        if report["workspace"]["legacy_assets_unmigrated"]:
+            _warn("Legacy root assets/ still has {} unmigrated file(s).".format(
+                report["workspace"]["legacy_assets_unmigrated"]
+            ))
+            _info("Migrate with: python3 main.py --check-note --fix")
+        else:
+            _info("Legacy root assets/ remains as a copy; safe to delete after the preview is confirmed.")
 
     _print_header("Next Steps")
-    print("  1. python3 main.py --setup")
+    print("  1. Open this folder in your agent and say: 开始使用")
     print("  2. python3 main.py --doi \"10.1038/s41467-026-69772-8\"")
     print("  3. Agent writes papers/<slug>.md from .raw/<slug>/")
     print("  4. python3 main.py --check-note papers/<slug>.md --fix")
@@ -231,7 +288,7 @@ def print_report(report):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="geo-academic-reader environment doctor")
-    parser.add_argument("--install", "--setup", action="store_true", dest="install", help="Install missing packages")
+    parser.add_argument("--install", action="store_true", dest="install", help="Install missing packages")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON")
     parser.add_argument("--launch-chrome", action="store_true", help="Launch Chrome with CDP 9222")
     args = parser.parse_args(argv)

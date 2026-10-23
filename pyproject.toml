@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geo-academic-reader"
-version = "0.2.1"
+version = "0.2.2"
 description = "Browser-first scientific literature evidence extractor and VS Code Markdown note workflow for geosciences and general science."
 readme = "README.md"
 authors = [{ name = "geo-academic-reader contributors" }]
@@ -35,7 +35,6 @@ dev = ["pytest>=7.0"]
 [project.scripts]
 geo-reader = "scripts.run_pipeline:main"
 geo-doctor = "doctor:main"
-geo-setup = "scripts.onboarding:main"
 
 [tool.setuptools]
 py-modules = ["doctor"]

@@ -8,7 +8,18 @@ python3 main.py --doctor
 python3 doctor.py --json
 ```
 
-It reports Python, dependencies, Chrome, CDP 9222, the saved profile, VS Code settings, and workspace directories.
+It reports Python, dependencies, Chrome, CDP 9222, the saved profile, VS Code settings, and workspace directories. If the profile is missing, that is normal on a fresh clone: say `开始使用` in the agent chat instead of looking for a setup command.
+
+---
+
+## First run and preferences
+
+| Symptom | Likely cause | What to do |
+|:---|:---|:---|
+| No `.geo-reader/profile.json` | Fresh clone or cleared state | Say `开始使用`; the agent runs the onboarding conversation from `AGENTS.md` §0. |
+| Agent starts extracting without asking | Onboarding section skipped | Tell it to follow `AGENTS.md` §0 first. Extraction without a profile is a contract violation. |
+| Preferences changed unexpectedly | Profile edited or corrupted | Say `重新设置偏好`. The agent backs up a corrupted file before rewriting it. |
+| Onboarding repeats every session | Agent cannot find the profile | Check `python3 main.py --profile`; confirm `.geo-reader/` is writable and not ignored by a tool that deletes it. |
 
 ---
 
@@ -51,7 +62,7 @@ Or copy the command printed by the doctor. It uses a separate profile so it does
 
 ## Images not showing in VS Code
 
-This is almost always a path problem.
+This is almost always a path or workspace-root problem. A useful symptom to recognize: hovering the image link in the editor shows a thumbnail, but the preview shows a broken image. Hover resolves the file on disk; the preview is a webview restricted to the workspace folder.
 
 1. Run:
 
@@ -59,21 +70,21 @@ This is almost always a path problem.
    python3 main.py --check-note "papers/<slug>.md" --fix
    ```
 
-2. Confirm the note uses `../assets/<slug>/fig_01.png`, not `./assets/...` or an absolute path.
+2. Confirm the note uses `assets/<slug>/fig_01.png` and the file lives under `papers/assets/<slug>/`. Older notes may use `../assets/...` with the file in a project-root `assets/`; `--fix` migrates the file and rewrites the link.
 
 3. Confirm the file is a real image:
 
    ```bash
-   file "assets/<slug>/fig_01.png"
+   file "papers/assets/<slug>/fig_01.png"
    ```
 
    If it reports HTML or text, the download saved an error page. Delete that figure, re-extract, and inspect the manifest warnings.
 
 4. In VS Code, run **Markdown: Refresh Preview** from the Command Palette.
 
-5. Open the note from the workspace root so relative paths are resolved consistently.
+5. The figure library intentionally sits inside `papers/` so the preview works whether the workspace root is the project root, `papers/`, or a single note file.
 
-`--fix` only rewrites unambiguous targets. If several files share a basename under `assets/`, it leaves the link alone and reports an error.
+`--fix` only rewrites unambiguous targets. If several files share a basename under `papers/assets/`, it leaves the link alone and reports an error.
 
 ---
 

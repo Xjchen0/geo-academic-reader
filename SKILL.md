@@ -1,6 +1,6 @@
 ---
 name: geo-academic-reader
-version: "0.2.1"
+version: "0.2.2"
 license: MIT
 description: >-
   Browser-first evidence extraction and VS Code-ready literature notes for scientific
@@ -13,18 +13,32 @@ compatibility: >-
   Optional: pymupdf for better PDF figure cropping.
 ---
 
-# geo-academic-reader (v0.2.1)
+# geo-academic-reader (v0.2.2)
 
 A workspace-level workflow, not a one-shot summarizer. The scripts extract evidence; the agent interprets it; a QA command verifies the note before delivery.
+
+---
+
+## 🚀 First Run
+
+Open the workspace in an agent (VS Code, Cursor, Claude Code, Antigravity, Windsurf, or a terminal agent) and say:
+
+```text
+开始使用
+```
+
+The agent follows `AGENTS.md` §0: it asks about language, editor, instruction style, browser policy, note depth, and citation format, then writes `.geo-reader/profile.json` and shows the three-step working loop. **There is no setup command and no wizard.** No `.geo-reader/` directory is created until that conversation happens, so a fresh clone carries no usage trace. Preferences persist across sessions; say `重新设置偏好` to change them.
+
+Load the skill only after the profile exists. If the profile is missing, onboarding comes first, even when the first message already contains a DOI.
 
 ---
 
 ## ⚡ Quick Start
 
 ```bash
-# 1. One-time environment setup and onboarding
+# 1. Install dependencies (once)
 ./install.sh                 # Windows: .\install.ps1
-python3 main.py --setup      # language, IDE, style, browser policy, depth, citation
+python3 doctor.py            # verify Python, packages, Chrome, CDP 9222
 
 # 2. Extract an evidence pack
 python3 main.py --doi "10.1038/s41467-026-69772-8"
@@ -39,7 +53,7 @@ python3 main.py --check-note "papers/<slug>.md" --fix
 python3 main.py --index "papers/<slug>.md"
 ```
 
-Installed entry points: `geo-reader`, `geo-doctor`, `geo-setup`.
+Installed entry points: `geo-reader`, `geo-doctor`.
 
 ---
 
@@ -65,7 +79,7 @@ Installed entry points: `geo-reader`, `geo-doctor`, `geo-setup`.
 ├── fulltext.md             # raw extracted text with page markers (PDF)
 ├── figures/manifest.json   # captions, origin, source_url, page, dimensions, markdown_path
 └── README.md               # human-readable summary of the pack
-assets/<slug>/fig_01.png    # actual image bytes
+papers/assets/<slug>/fig_01.png   # actual image bytes, next to the notes
 ```
 
 The scripts **do not** write `papers/<slug>.md`. If the note is missing, the agent has not done its job yet.
@@ -88,12 +102,13 @@ Manifest fields that matter most: `caption`, `origin`, `source_url`, `page`, `wi
    - Only reproduce equations that appear in the source; no sample equations.
 
 2. **Local figures**
-   - Notes live in `papers/`, so the link is:
+   - Figures live in `papers/assets/<slug>/`, inside the same `papers/` tree as the note. The only correct link is:
      ```markdown
-     ![图 1：图注](../assets/<slug>/fig_01.png)
+     ![图 1：图注](assets/<slug>/fig_01.png)
      *图 1：图注（来源：browser；原始链接：...）*
      ```
-   - Never use `./assets/...`, absolute paths, or remote publisher URLs as the primary image.
+   - VS Code's Markdown preview only loads local images under the workspace folder (or, in a single-file window, under the note's own folder). Keeping figures in `papers/assets/` makes the note render whether the user opens the project root, `papers/`, or the note alone.
+   - Never use `../assets/...`, `./assets/...`, absolute paths, `file://`, or remote publisher URLs as the primary image.
    - Caption text comes from `figures/manifest.json`; if empty, say so.
 
 3. **GFM alerts**
@@ -121,9 +136,9 @@ python3 main.py --check-note --fix          # all papers/*.md
 python3 main.py --check-note --strict       # warnings become errors
 ```
 
-Checks: missing images, zero-byte files, invalid image magic bytes, files outside `assets/`, non-standard relative paths, leftover template markers, hyperbole, odd number of `$$`.
+Checks: missing images, zero-byte files, invalid image magic bytes, files outside `papers/assets/`, legacy root-level assets, non-standard relative paths, leftover template markers, hyperbole, odd number of `$$`.
 
-`--fix` rewrites a path only when the intended target is unambiguous. Do not delete a figure merely to make the report clean; report it.
+`--fix` rewrites a path only when the intended target is unambiguous, and migrates figures from a legacy root `assets/` folder into `papers/assets/`, updating the note, manifest, and `paper.json`. Do not delete a figure merely to make the report clean; report it.
 
 Before delivery, also run:
 
@@ -139,12 +154,13 @@ This updates the 7-column row in `papers/INDEX.md`.
 
 | Symptom | Meaning | Action |
 |:---|:---|:---|
+| No profile yet | First run | Say `开始使用` in the agent chat; do not run a setup script |
 | No Chrome found | Browser-first figures unavailable | Install Chrome, or accept `--browser off` and PDF fallback |
 | CDP 9222 not running | Chrome not in debug mode | Use `--browser auto`, or `python3 doctor.py --launch-chrome` |
 | Cloudflare challenge | Interactive check not passed | Complete it in the launched Chrome window, then retry with `--browser existing` |
 | Zero figures | JS viewer, paywall, or selector mismatch | Read manifest warnings; retry with `--browser auto`; check the page manually |
 | Text < 800 chars | Abstract page or paywall | Inspect `fulltext.md`; use OA PDF or `--url`; do not write a full review from an abstract |
-| Image missing in preview | Wrong relative path | `--check-note --fix`; expected `../assets/<slug>/...` |
+| Image missing in preview | Wrong relative path or legacy layout | `--check-note --fix`; expected `assets/<slug>/...` under `papers/` |
 | Crossref 404 | New/preprint DOI | Use `--url`, or download the PDF and use `--pdf` |
 | PDF text empty | Scanned PDF, no text layer | OCR is not included; obtain a text PDF or use the publisher page |
 

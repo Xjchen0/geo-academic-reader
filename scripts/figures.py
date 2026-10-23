@@ -215,13 +215,13 @@ def write_manifest(path: Path, payload: dict) -> None:
 
 
 def cleanup_old_figures(assets_dir: Path, keep_names: Iterable[str]) -> List[str]:
-    """Remove only generated fig_*.ext files that are not part of the new manifest."""
+    """Remove only generated figure files that are not part of the new manifest."""
     keep = {str(name) for name in keep_names}
     removed = []
     if not assets_dir.exists():
         return removed
     for path in assets_dir.iterdir():
-        if path.is_file() and re.match(r"^fig_\d+\.(png|jpe?g|gif|webp|tiff?)$", path.name, re.I):
+        if path.is_file() and re.match(r"^(?:ed_)?fig_\d+\.(png|jpe?g|gif|webp|tiff?)$", path.name, re.I):
             if path.name not in keep:
                 try:
                     path.unlink()

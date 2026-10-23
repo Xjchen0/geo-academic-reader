@@ -12,6 +12,7 @@ from urllib.parse import unquote
 from .config import (
     ASSETS_DIR,
     INDEX_FILE,
+    LEGACY_ASSETS_DIR,
     PAPERS_DIR,
     PROJECT_ROOT,
     RAW_DIR,
@@ -40,6 +41,35 @@ FORBIDDEN_WORDS = ("颠覆一切", "彻底终结", "空前重大突破", "完美
 
 def _line_of(text: str, index: int) -> int:
     return text.count("\n", 0, index) + 1
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _canonical_counterpart(resolved: Path) -> Optional[Path]:
+    """Map a legacy <root>/assets/<slug>/<file> path into papers/assets/."""
+    if not _is_within(resolved, LEGACY_ASSETS_DIR):
+        return None
+    try:
+        relative = resolved.resolve().relative_to(LEGACY_ASSETS_DIR.resolve())
+    except ValueError:
+        return None
+    return (ASSETS_DIR / relative).resolve()
+
+
+def _legacy_counterpart(resolved: Path) -> Optional[Path]:
+    if not _is_within(resolved, ASSETS_DIR):
+        return None
+    try:
+        relative = resolved.resolve().relative_to(ASSETS_DIR.resolve())
+    except ValueError:
+        return None
+    return (LEGACY_ASSETS_DIR / relative).resolve()
 
 
 def _iter_image_refs(text: str):
@@ -114,9 +144,27 @@ def validate_note(note_path: Path, strict: bool = False) -> Dict[str, object]:
         images += 1
         clean_ref = unquote(ref.split("#", 1)[0])
         resolved = (note_path.parent / clean_ref).resolve()
-        expected = relative_posix(resolved, note_path.parent)
 
         if not resolved.exists():
+            # A legacy root-level assets/ file may still satisfy a note that
+            # already uses the new "assets/<slug>/..." form.
+            legacy = _legacy_counterpart(resolved)
+            if legacy is not None and legacy.exists():
+                target = _canonical_counterpart(legacy)
+                issues.append(
+                    {
+                        "severity": "error",
+                        "code": "legacy_assets_layout",
+                        "line": line,
+                        "message": (
+                            "图片仍在旧版根目录 assets/，VS Code 只打开 papers/ 或单个笔记时"
+                            "预览会裂图；运行 --check-note --fix 迁移到 papers/assets/: {}"
+                        ).format(ref),
+                        "ref": ref,
+                        "migration_target": relative_posix(target, note_path.parent) if target else "",
+                    }
+                )
+                continue
             issues.append(
                 {
                     "severity": "error",
@@ -124,7 +172,7 @@ def validate_note(note_path: Path, strict: bool = False) -> Dict[str, object]:
                     "line": line,
                     "message": "图片不存在: {}".format(ref),
                     "ref": ref,
-                    "expected": expected,
+                    "expected": relative_posix(resolved, note_path.parent),
                 }
             )
             continue
@@ -162,19 +210,35 @@ def validate_note(note_path: Path, strict: bool = False) -> Dict[str, object]:
                 }
             )
 
-        try:
-            resolved.relative_to(ASSETS_DIR.resolve())
-        except ValueError:
+        if _is_within(resolved, LEGACY_ASSETS_DIR):
+            target = _canonical_counterpart(resolved)
+            issues.append(
+                {
+                    "severity": "error",
+                    "code": "legacy_assets_layout",
+                    "line": line,
+                    "message": (
+                        "图片位于旧版根目录 assets/，在只打开 papers/ 或单个笔记时无法预览；"
+                        "运行 --check-note --fix 迁移: {}"
+                    ).format(ref),
+                    "ref": ref,
+                    "migration_target": relative_posix(target, note_path.parent) if target else "",
+                }
+            )
+            continue
+
+        if not _is_within(resolved, ASSETS_DIR):
             issues.append(
                 {
                     "severity": "warning",
                     "code": "outside_assets",
                     "line": line,
-                    "message": "图片不在 assets/ 下，换机器或移动工作区后容易失效: {}".format(ref),
+                    "message": "图片不在 papers/assets/ 下，换机器或移动工作区后容易失效: {}".format(ref),
                     "ref": ref,
                 }
             )
 
+        expected = relative_posix(resolved, note_path.parent)
         if os.path.normpath(clean_ref) != os.path.normpath(expected):
             issues.append(
                 {
@@ -253,30 +317,139 @@ def _replace_image_ref(text: str, old: str, new: str) -> str:
     return text
 
 
+def _copy_asset(source: Path, target: Path) -> bool:
+    """Copy an image without overwriting a different, already-migrated file."""
+    if not source.is_file():
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists() and target.stat().st_size > 0:
+        return True
+    try:
+        import shutil
+
+        shutil.copy2(str(source), str(target))
+        return True
+    except OSError:
+        return False
+
+
+def _sync_evidence_paths(slug: str) -> None:
+    """Keep .raw/<slug>/ figures/manifest.json in sync after a migration."""
+    if not slug:
+        return
+    manifest_path = RAW_DIR / slug / "figures" / "manifest.json"
+    assets_dir = ASSETS_DIR / slug
+    if not manifest_path.exists() or not assets_dir.exists():
+        return
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    changed = False
+    for figure in payload.get("figures") or []:
+        name = figure.get("file") or Path(
+            figure.get("markdown_path") or figure.get("local_path") or ""
+        ).name
+        target = assets_dir / name if name else None
+        if not name or not target or not target.is_file():
+            continue
+        updates = {
+            "file": name,
+            "markdown_path": "assets/{}/{}".format(slug, name),
+            "local_path": relative_posix(target, PROJECT_ROOT),
+        }
+        for key, value in updates.items():
+            if figure.get(key) != value:
+                figure[key] = value
+                changed = True
+        if "source_url" not in figure and figure.get("url"):
+            figure["source_url"] = figure["url"]
+            changed = True
+        if "is_body_figure" not in figure:
+            figure["is_body_figure"] = figure.get("body_figure", figure.get("in_figure"))
+            changed = True
+    payload["assets_dir"] = relative_posix(assets_dir, PROJECT_ROOT)
+    if changed:
+        manifest_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+    paper_path = RAW_DIR / slug / "paper.json"
+    if paper_path.exists():
+        try:
+            paper = json.loads(paper_path.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        files = paper.setdefault("files", {})
+        value = relative_posix(assets_dir, PROJECT_ROOT)
+        if files.get("assets_dir") != value:
+            files["assets_dir"] = value
+            paper_path.write_text(
+                json.dumps(paper, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            )
+
+
 def fix_note(note_path: Path, dry_run: bool = False) -> Dict[str, object]:
     note_path = Path(note_path).resolve()
     report = validate_note(note_path)
     text = note_path.read_text(encoding="utf-8", errors="replace")
     changed = False
     fixed = []
+    migrated = []
+    touched_slugs = set()
+    referenced_slugs = set()
+
+    for ref, _start, _end, _kind in _iter_image_refs(text):
+        clean = os.path.normpath(unquote(ref.split("#", 1)[0]))
+        parts = Path(clean).parts
+        if len(parts) >= 2 and parts[0] == "assets":
+            referenced_slugs.add(parts[1])
 
     for issue in report["issues"]:
-        if issue["code"] not in ("missing_image", "wrong_relative_path"):
+        code = issue["code"]
+        if code not in ("missing_image", "wrong_relative_path", "legacy_assets_layout"):
             continue
         ref = issue.get("ref", "")
         expected = issue.get("expected", "")
         replacement = None
 
-        if issue["code"] == "wrong_relative_path" and expected:
+        if code == "legacy_assets_layout":
+            source = (note_path.parent / ref).resolve()
+            if not source.exists():
+                # The note already uses "assets/<slug>/..." but the file is
+                # still in the legacy root-level assets/ directory.
+                source = _legacy_counterpart(source) or source
+            relative = None
+            if _is_within(source, LEGACY_ASSETS_DIR) and source.exists():
+                relative = source.relative_to(LEGACY_ASSETS_DIR.resolve())
+            if relative is not None:
+                target = ASSETS_DIR / relative
+                if _copy_asset(source, target):
+                    touched_slugs.add(relative.parts[0] if relative.parts else "")
+                    replacement = relative_posix(target, note_path.parent)
+                    migrated.append({"from": ref, "to": replacement, "file": str(target)})
+
+        elif code == "wrong_relative_path" and expected:
             candidate = (note_path.parent / expected).resolve()
             if candidate.exists():
                 replacement = expected
 
-        if issue["code"] == "missing_image":
+        elif code == "missing_image":
             basename = Path(ref).name
-            matches = list(ASSETS_DIR.rglob(basename))
-            if len(matches) == 1 and matches[0].is_file():
+            matches = [path for path in ASSETS_DIR.rglob(basename) if path.is_file()]
+            if len(matches) == 1:
                 replacement = relative_posix(matches[0], note_path.parent)
+            else:
+                legacy_matches = [
+                    path for path in LEGACY_ASSETS_DIR.rglob(basename) if path.is_file()
+                ] if LEGACY_ASSETS_DIR.exists() else []
+                if len(legacy_matches) == 1:
+                    source = legacy_matches[0]
+                    relative = source.relative_to(LEGACY_ASSETS_DIR.resolve())
+                    target = ASSETS_DIR / relative
+                    if _copy_asset(source, target):
+                        touched_slugs.add(relative.parts[0] if relative.parts else "")
+                        replacement = relative_posix(target, note_path.parent)
+                        migrated.append({"from": ref, "to": replacement, "file": str(target)})
 
         if replacement and replacement != ref:
             text = _replace_image_ref(text, ref, replacement)
@@ -286,12 +459,26 @@ def fix_note(note_path: Path, dry_run: bool = False) -> Dict[str, object]:
     if changed and not dry_run:
         note_path.write_text(text, encoding="utf-8")
 
+    if not dry_run:
+        # Keep the canonical folder complete for every slug touched by this
+        # note, including figures the note did not reference yet.
+        for slug in sorted(filter(None, touched_slugs | referenced_slugs)):
+            legacy_dir = LEGACY_ASSETS_DIR / slug
+            if legacy_dir.is_dir():
+                for source in legacy_dir.rglob("*"):
+                    if not source.is_file():
+                        continue
+                    relative = source.relative_to(legacy_dir)
+                    _copy_asset(source, ASSETS_DIR / slug / relative)
+            _sync_evidence_paths(slug)
+
     return {
         "note": str(note_path),
         "changed": changed,
         "fixed": fixed,
+        "migrated": migrated,
         "dry_run": dry_run,
-        "report": validate_note(note_path) if changed and not dry_run else report,
+        "report": validate_note(note_path) if (changed or migrated) and not dry_run else report,
     }
 
 
@@ -330,6 +517,8 @@ def check_notes(paths: Optional[Iterable[Path]] = None, fix: bool = False, stric
             print_report(report)
             if result["fixed"]:
                 print("   → 已修复 {} 处路径".format(len(result["fixed"])))
+            if result.get("migrated"):
+                print("   → 已迁移 {} 张图片到 papers/assets/".format(len(result["migrated"])))
         else:
             report = validate_note(target, strict=strict)
             print_report(report)

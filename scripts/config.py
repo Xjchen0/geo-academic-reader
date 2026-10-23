@@ -15,7 +15,14 @@ from .version import __version__
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 PAPERS_DIR = PROJECT_ROOT / "papers"
-ASSETS_DIR = PROJECT_ROOT / "assets"
+# Figures live beside the notes so that the Markdown preview works no matter
+# whether the user opens the project root, papers/, or a single note file.
+# VS Code only allows local images under the current workspace root (or the
+# note's own directory for single-file windows); a sibling assets/ folder at
+# the project root breaks in the latter two cases.
+ASSETS_DIR = PAPERS_DIR / "assets"
+# Pre-0.2.2 location, kept for one-command migration in --check-note --fix.
+LEGACY_ASSETS_DIR = PROJECT_ROOT / "assets"
 INPUT_PDFS_DIR = PROJECT_ROOT / "input_pdfs"
 RAW_DIR = PROJECT_ROOT / ".raw"
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
@@ -75,8 +82,14 @@ def today_iso() -> str:
 
 
 def ensure_workspace_dirs() -> None:
-    for directory in (PAPERS_DIR, ASSETS_DIR, INPUT_PDFS_DIR, RAW_DIR, GUIDE_DIR):
+    # Do not create GUIDE_DIR here: a first-time user should leave no trace
+    # until the conversational onboarding writes .geo-reader/profile.json.
+    for directory in (PAPERS_DIR, ASSETS_DIR, INPUT_PDFS_DIR, RAW_DIR):
         directory.mkdir(parents=True, exist_ok=True)
+
+
+def profile_exists() -> bool:
+    return PROFILE_PATH.is_file()
 
 
 def is_tty() -> bool:

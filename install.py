@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""One-click installer for geo-academic-reader v0.2.1."""
+"""One-click installer for geo-academic-reader v0.2.2."""
 
 import argparse
 import os
@@ -73,7 +73,7 @@ def main(argv=None):
                    if has_uv else [sys.executable, "-m", "pip", "install", "pymupdf>=1.23"])
         run_command(command, "Installing optional PyMuPDF")
 
-    print("\n[*] Registering CLI tools (geo-reader, geo-doctor, geo-setup)...")
+    print("\n[*] Registering CLI tools (geo-reader, geo-doctor)...")
     if has_uv:
         editable_command = ["uv", "pip", "install", "-e", "."]
     else:
@@ -91,7 +91,7 @@ def main(argv=None):
         subprocess.run([sys.executable, str(package_dir / "doctor.py")])
 
     print("\nInstallation complete. Next steps:")
-    print("  1. python3 main.py --setup")
+    print("  1. Open this folder in your agent and say: 开始使用 (or Start)")
     print("  2. python3 main.py --doi \"10.1038/s41467-026-69772-8\"")
     print("  3. Ask your agent to write papers/<slug>.md from .raw/<slug>/")
     print("  4. python3 main.py --check-note papers/<slug>.md --fix")

@@ -2,15 +2,28 @@
 
 这个文件不是“咒语大全”，而是一组**带约束的任务描述**。核心原则只有一条：先要证据，再要解读；没有证据的地方，明确写“原文未提供”。
 
-> 首次使用请先运行 `python3 main.py --setup`。Agent 会读取 `.geo-reader/profile.json` 中的语言、风格和深度。
+> **首次使用不需要运行设置脚本。** 在这个工作区里直接对 Agent 说 `开始使用`。Agent 会先用几个问题了解语言、环境、指令风格、浏览器策略、精读深度和引用格式，然后自己写入 `.geo-reader/profile.json`。以后每次任务都会沿用这份偏好；想修改时说 `重新设置偏好`。
 
 ---
 
-## 0. 开始之前：一句话确认工作区状态
+## 0. 首次使用：一句话触发对话式引导
 
 ```text
-先运行 python3 main.py --list，告诉我当前有哪些证据包和笔记。
-如果 .geo-reader/profile.json 不存在，先提示我运行 python3 main.py --setup，不要直接开始抽论文。
+开始使用。请先按 AGENTS.md 第 0 节和我确认偏好，再告诉我下一步可以做什么。
+不要让我运行 --setup 之类的设置命令。
+```
+
+如果跳过引导、直接给论文，Agent 也必须先完成引导：
+
+```text
+精读 DOI 10.1038/s41467-026-69772-8。
+如果 .geo-reader/profile.json 不存在，先用对话问我偏好并保存，再开始抽论文。
+```
+
+修改偏好：
+
+```text
+重新设置偏好。保留 .geo-reader/profile.json 里的 created_at，更新后告诉我有哪些变化。
 ```
 
 ---
@@ -24,7 +37,7 @@
 1. 先运行 python3 main.py --doi "10.1038/s41467-026-69772-8" 生成证据包；优先浏览器高清图，不要先抽 PDF 图。
 2. 读取 .raw/<slug>/paper.json、fulltext.md、figures/manifest.json。
 3. 按 templates/paper_note.md 写 papers/<slug>.md。
-4. 图片只用 ../assets/<slug>/fig_XX.png，图注必须来自 manifest。
+4. 图片只用 assets/<slug>/fig_XX.png，图注必须来自 manifest。
 5. 不要编造公式、数据、结论；证据不足写“原文未提供”。
 6. 最后运行 --check-note --fix 和 --index，并把 warnings 原样告诉我。
 ```
@@ -136,7 +149,7 @@
 - 脚本只产出证据包；综述和笔记由你写，但只能基于 .raw/<slug>/ 中的证据。
 - 禁止通用段落、示例公式、与本文无关的模板化结论。
 - 每个关键结论后标注证据锚点：PDF 用（第 N 页），网页用（原文第 N 段/节）。
-- 图片路径必须是 ../assets/<slug>/fig_XX.png；图注来自 manifest。
+- 图片路径必须是 assets/<slug>/fig_XX.png（在 papers/ 内）；图注来自 manifest。
 - 不写“颠覆一切”“彻底终结”“完美解决”“前所未有”等措辞。
 - 交付前必须运行 --check-note --fix，再运行 --index。
 - 如果正文少于 800 字符、图片为 0、或浏览器被人机验证拦截，先报告，不要硬写。
@@ -151,12 +164,26 @@
 | “帮我总结这篇论文” | 容易得到泛泛而谈的摘要 | “先抽证据包，再按模板写，逐图给证据锚点” |
 | “把 PDF 里的图都截出来” | 位图可能低清、缺图注 | “PDF 有 DOI 时优先浏览器取高清图” |
 | “公式写得漂亮一点” | 会诱发编造公式 | “只写原文出现的公式，并标页码” |
-| “图片随便放 assets 里” | 路径不一致导致预览失败 | “统一用 ../assets/<slug>/fig_XX.png，跑 --check-note” |
+| “图片随便放 assets 里” | 路径不一致导致预览失败 | “统一用 assets/<slug>/fig_XX.png，跑 --check-note” |
 | “补几篇相关文献” | 容易产生不存在的引用 | “只使用工作区内已抽取的论文，或明确标注待补检索” |
 
 ---
 
 ## English quick prompts
+
+**First run (conversational onboarding)**
+
+```text
+Start. Follow AGENTS.md section 0: ask me about language, editor, instruction style,
+browser policy, note depth, and citation format, then save .geo-reader/profile.json.
+Do not ask me to run a setup script.
+```
+
+**Reconfigure**
+
+```text
+Reconfigure my preferences. Keep created_at in .geo-reader/profile.json and tell me what changed.
+```
 
 **Single paper by DOI**
 
@@ -166,7 +193,7 @@ Read DOI 10.1038/s41467-026-69772-8.
 1. Run `python3 main.py --doi "10.1038/s41467-026-69772-8"` first. Prefer browser-extracted high-resolution figures; do not start from PDF figures.
 2. Read `.raw/<slug>/paper.json`, `fulltext.md`, and `figures/manifest.json`.
 3. Write `papers/<slug>.md` using `templates/paper_note.md`.
-4. Use only `../assets/<slug>/fig_XX.png` for images, with captions from the manifest.
+4. Use only `assets/<slug>/fig_XX.png` for images, with captions from the manifest.
 5. Do not invent formulas, data, or conclusions. Write "not provided" when evidence is missing.
 6. Finish with `--check-note --fix` and `--index`, and report all warnings.
 ```

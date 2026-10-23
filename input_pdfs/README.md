@@ -17,7 +17,7 @@ python3 main.py --batch-pdfs
 1. 提取 PDF 文本与 DOI；
 2. 如果 PDF 内含 DOI，优先用 Chrome 打开出版社页面取高清图；
 3. 浏览器失败时才回退到 PDF 内嵌图；
-4. 证据包写入 `.raw/<slug>/`，图片写入 `assets/<slug>/`；
+4. 证据包写入 `.raw/<slug>/`，图片写入 `papers/assets/<slug>/`；
 5. **脚本不会生成 `papers/<slug>.md`**，综述由 Agent 基于证据包撰写；
 6. 用 `--check-note` 和 `--index` 完成体检与索引登记。
 

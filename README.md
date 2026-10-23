@@ -1,74 +1,51 @@
-# geo-academic-reader 🌍
+# geo-academic-reader
 
-[![Version](https://img.shields.io/badge/version-0.2.1-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
+[![Version](https://img.shields.io/badge/version-0.2.2-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-green.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
 
-> **A browser-first literature workspace for AI agents.** The scripts collect evidence; the agent writes the review; a built-in QA step catches broken figures and fabricated filler before you cite anything.
+> A literature workspace for AI agents: **browser-first evidence extraction**, **agent-written notes**, and **preview-safe Markdown** that renders in VS Code.
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 ---
 
-## Why this exists
+## What it does
 
-Two failure modes are common in "AI reads papers" workflows:
+Point it at a DOI, a publisher URL, or a local PDF. It returns an **evidence pack** — metadata, extracted text with page anchors, figure captions with provenance, and downloaded images. Your agent reads that pack and writes a literature note. You get a durable Markdown knowledge base instead of a chat transcript.
 
-1. **The script writes the review.** A generic Markdown generator produces plausible-sounding paragraphs and sample equations that have nothing to do with the paper, so every note looks "deep" while saying very little.
-2. **The PDF becomes the source of figures.** Embedded bitmaps are often low-resolution, split across pages, or missing captions — even when the publisher page has a clean, high-resolution figure.
+The design separates three responsibilities:
 
-Version 0.2.1 fixes both by separating responsibilities:
+| Layer | Responsibility | Output |
+| :--- | :--- | :--- |
+| Scripts | Fetch, render, download, record provenance | `.raw/<slug>/`, `papers/assets/<slug>/` |
+| Agent | Interpret the evidence, write the note | `papers/<slug>.md` |
+| QA | Verify paths, images, tone, math, placeholders | `--check-note`, `--index` |
 
-- **Scripts extract.** They produce an evidence pack with raw text, metadata, figure captions, figure provenance, and downloaded images. They never write a literature review.
-- **Agents interpret.** The agent reads the evidence pack and writes `papers/<slug>.md` using `templates/paper_note.md`, with an evidence anchor for every important claim.
-- **QA verifies.** `--check-note` checks image paths, empty or corrupt files, template leftovers, hyperbole, and unbalanced display math before delivery.
-
-For a DOI, a web URL, or a PDF that contains a DOI, the pipeline tries **Chrome first** so the figures come from the rendered publisher page at the highest available resolution. PDF figures are a fallback, and the manifest records which path was used.
-
----
-
-## Pipeline
-
-```text
-DOI / URL / PDF
-      │
-      ▼
-Chrome DevTools Protocol (CDP 9222)  ──►  rendered page, high-res figure URLs
-      │                                      (in-page fetch for CDN 403s)
-      ▼
-.raw/<slug>/paper.json
-.raw/<slug>/fulltext.md
-.raw/<slug>/figures/manifest.json
-assets/<slug>/fig_01.png ...
-      │
-      ▼
-Agent (AGENTS.md + templates/paper_note.md)
-      │
-      ▼
-papers/<slug>.md  ──►  --check-note --fix  ──►  --index  ──►  papers/INDEX.md
-```
+The scripts never write review prose. That is deliberate: a generator that fills every section with plausible text makes a shallow note look thorough.
 
 ---
 
-## What is new in 0.2.1
+## Why browser-first
 
-- **Browser-first extraction.** `--browser auto` launches Chrome with a dedicated profile on port 9222, waits for JavaScript rendering, upgrades thumbnail URLs, and downloads images from the page context when direct HTTP is blocked.
-- **Evidence packs instead of generated prose.** `main.py` writes only `.raw/<slug>/` and `assets/<slug>/`. It does not create `papers/<slug>.md`.
-- **Note QA.** `--check-note --fix` repairs common image problems, including paths that preview fine on one machine but break after moving the workspace.
-- **First-run onboarding.** `--setup` asks about language, IDE, agent style, browser policy, note depth, and citation format, then stores the answers in `.geo-reader/profile.json` for `AGENTS.md` to follow.
-- **Packaging.** `scripts/` is now a real package, with `geo-reader`, `geo-doctor`, and `geo-setup` entry points.
+- Publisher pages give figure order, captions, and panel structure; PDF extraction often splits multi-panel figures or loses captions.
+- Thumbnail URLs in the initial DOM (`/w400/`, `.medium.gif`) are rewritten to `full`, `w1200`, or `large` variants before download.
+- When a CDN rejects direct HTTP with a 403, the image is fetched in the page context, reusing the browser session and referer.
+- PDF-embedded images remain a fallback. When they are used, the manifest and the note say so.
+
+Access is not circumvention. The pipeline uses the browser session you already have; it does not bypass paywalls or bot checks.
 
 ---
 
 ## Requirements
 
 - Python **3.9+**
-- `requests`, `beautifulsoup4`, `pypdf`, `websockets` (installed by the setup script)
-- **Google Chrome, Chromium, or Microsoft Edge** — strongly recommended for high-resolution figures and JavaScript-rendered pages
-- Optional: `pymupdf` (`pip install -r requirements-optional.txt`) for better PDF figure cropping and caption matching
+- `requests`, `beautifulsoup4`, `pypdf`, `websockets`
+- **Google Chrome, Chromium, or Microsoft Edge** — strongly recommended for JavaScript-rendered pages and high-resolution figures
+- Optional: `pymupdf` for caption-aware PDF figure cropping
 
-No Node.js, npm, or headless-browser download is required.
+No Node.js or headless-browser download is required.
 
 ---
 
@@ -77,81 +54,82 @@ No Node.js, npm, or headless-browser download is required.
 ```bash
 git clone https://github.com/Xjchen0/geo-academic-reader.git
 cd geo-academic-reader
-
-# macOS / Linux
-./install.sh
-
-# Windows PowerShell
-.\install.ps1
-
-# Any platform, equivalent
-python install.py
+./install.sh          # Windows: .\install.ps1   |   any platform: python install.py
 ```
 
-Then run the one-minute onboarding:
+Open the folder in your agent (VS Code, Cursor, Claude Code, Antigravity, Windsurf, or a terminal agent) and say:
+
+```text
+开始使用
+```
+
+That is the whole onboarding. The agent follows `AGENTS.md` §0: it asks six short questions, writes `.geo-reader/profile.json`, and remembers the answers for later sessions. **There is no setup command, no wizard, and no files written before the conversation** — a fresh clone carries no usage trace. Say `重新设置偏好` at any time to change your choices.
+
+Then extract your first paper:
 
 ```bash
-python3 main.py --setup
+python3 main.py --doi "10.1038/s41467-026-69772-8"
 ```
 
-On Windows, use `python` if `python3` is not on `PATH`.
+Ask the agent to write the note from the evidence pack, and finish with:
 
-The wizard asks for:
+```bash
+python3 main.py --check-note "papers/<slug>.md" --fix
+python3 main.py --index "papers/<slug>.md"
+```
 
-| Choice | Options | Effect |
+Ready-to-use prompts are in [PROMPTS.md](PROMPTS.md).
+
+---
+
+## First conversation
+
+The agent asks, in one or two batches:
+
+| Choice | Options | What it changes |
 | :--- | :--- | :--- |
-| Output language | `zh-CN`, `en`, `bilingual` | Language the agent uses for notes |
-| Main environment | VS Code, Cursor, Claude Code, Antigravity, Windsurf, CLI | Recorded in the profile and welcome guide |
-| Agent instruction style | `guided`, `balanced`, `expert` | How often the agent stops for confirmation |
-| Browser policy | `auto`, `existing`, `off` | Whether to launch Chrome, reuse port 9222, or skip the browser |
-| Note depth | `brief`, `standard`, `deep` | Length and figure-by-figure detail |
-| Citation format | APA, Nature, GB/T 7714 | Preferred reference style |
+| Language | `zh-CN`, `en`, `bilingual` | Language of notes and replies |
+| Editor | VS Code, Cursor, Claude Code, Antigravity, Windsurf, terminal | Formatting conventions and preview advice |
+| Instruction style | `guided`, `balanced`, `expert` | How often the agent stops to confirm |
+| Browser policy | `auto`, `existing`, `off` | Whether it may launch Chrome, reuse port 9222, or stay on HTTP/PDF |
+| Note depth | `brief`, `standard`, `deep` | One-page brief, standard IMRaD, or per-figure deep read |
+| Citation format | `apa`, `nature`, `gbt7714` | Reference section style |
 
-Your answers are saved to `.geo-reader/profile.json`, and a local summary is written to `.geo-reader/WELCOME.md`. Both files are git-ignored. `AGENTS.md` tells the agent to read the profile at the start of every task. Re-run the wizard at any time with `--reconfigure`.
+Defaults are `zh-CN`, VS Code, balanced, browser auto, deep, APA. Saying “use defaults” is enough. The profile is local and git-ignored; the agent checks it with `python3 main.py --profile --json` before each task and never re-onboards once it exists.
 
 ---
 
 ## Daily workflow
 
-### 1. Extract an evidence pack
+### 1. Extract
 
 ```bash
-# DOI
 python3 main.py --doi "10.1038/s41467-026-69772-8"
-
-# Publisher page
 python3 main.py --url "https://www.nature.com/articles/s41467-026-69772-8"
-
-# Local PDF (uses its DOI to find the publisher page when possible)
 python3 main.py --pdf "input_pdfs/my_paper.pdf"
-
-# Every PDF in input_pdfs/
 python3 main.py --batch-pdfs
 ```
 
-Useful options:
+Useful flags:
 
 ```bash
 --browser auto       # launch/reuse Chrome, browser first (default)
---browser existing   # only use an already-running Chrome on port 9222
---browser off        # no browser; HTTP/PDF only
---wait 6             # wait longer after page load
+--browser existing   # only reuse a Chrome already listening on 9222
+--browser off        # HTTP/PDF only
+--wait 6             # extra wait for JavaScript or bot checks
 --max-figures 20     # cap downloaded figures
 --json               # machine-readable summary
---quiet              # less progress output
 ```
 
-The command prints the slug, evidence-pack paths, figure count, extraction method (for example `text=browser; figures=browser`), and any warnings.
+The command prints the slug, evidence paths, figure count, extraction route (`text=browser; figures=browser`), and warnings. It does not create the note.
 
-### 2. Let the agent write the note
+### 2. Write
 
-Tell your agent something like:
+Give the agent the evidence-pack paths and `templates/paper_note.md`. A typical instruction:
 
-> Read the evidence pack in `.raw/<slug>/`, then write `papers/<slug>.md` using `templates/paper_note.md`. Use only the extracted text and manifest captions; do not invent formulas or conclusions. Link figures as `../assets/<slug>/fig_XX.png`. Finish with `--check-note --fix` and `--index`.
+> Read `.raw/<slug>/` and write `papers/<slug>.md` from `templates/paper_note.md`. Use only the extracted text and manifest captions; never invent formulas or conclusions. Link figures as `assets/<slug>/fig_XX.png`. Anchor key claims to a page or section. Finish with `--check-note --fix` and `--index`.
 
-More ready-to-use prompts are in [PROMPTS.md](PROMPTS.md).
-
-### 3. Validate and index
+### 3. Verify
 
 ```bash
 python3 main.py --check-note "papers/<slug>.md" --fix
@@ -159,35 +137,68 @@ python3 main.py --index "papers/<slug>.md"
 python3 main.py --list
 ```
 
-`--check-note` reports missing images, zero-byte files, files that are not valid images, paths outside `assets/`, non-standard relative paths, leftover placeholder text, hyperbolic wording, and unbalanced `$$` blocks. `--fix` repairs image paths when the target can be determined safely. Add `--strict` to treat warnings as errors.
+`--check-note` verifies image existence, non-zero size, image magic bytes, the canonical figure layout, leftover template text, hyperbolic wording, and balanced `$$`. `--fix` rewrites paths and migrates legacy figures only when the target is unambiguous. Add `--strict` to turn warnings into errors.
 
-### 4. Preview in VS Code
+### 4. Preview
 
-- macOS: `Cmd + Shift + V`
-- Windows / Linux: `Ctrl + Shift + V`
+Open `papers/<slug>.md` and press `Cmd+Shift+V` (macOS) or `Ctrl+Shift+V`. Native KaTeX and GFM alerts work without extensions.
 
-The workspace's `.vscode/settings.json` enables native KaTeX and GFM alerts. No extension is required for math, although [`.vscode/extensions.json`](.vscode/extensions.json) recommends a few Markdown helpers.
+---
+
+## Figure paths and VS Code preview
+
+VS Code's built-in Markdown preview loads local images only from the workspace folder. In a single-file window it allows only the note's own folder. A project-root `assets/` therefore fails whenever the user opens `papers/` or the note alone — while hovering the link in the editor can still show a thumbnail, because hover resolves the file on disk through a different path. That mismatch is why “the image link works but the preview is broken” happens.
+
+This workspace keeps figures **inside the note tree**:
+
+```text
+papers/
+├── INDEX.md
+├── <slug>.md
+└── assets/
+    └── <slug>/
+        ├── fig_01.png
+        └── fig_02.png
+```
+
+The note links them relatively:
+
+```markdown
+![图 1：图注](assets/<slug>/fig_01.png)
+*图 1：图注（来源：browser；原始链接：https://...）*
+```
+
+This renders whether the workspace root is the project root, `papers/`, or the single note file. `../assets/...`, `./assets/...`, absolute paths, `file://`, and `<img>` tags are rejected by QA.
+
+### Upgrading from 0.2.1
+
+Older workspaces stored figures in a root-level `assets/` and used `../assets/...` links. Run:
+
+```bash
+python3 main.py --check-note --fix
+```
+
+`--fix` copies each figure into `papers/assets/<slug>/`, rewrites the note links, and updates `figures/manifest.json` and `paper.json`. The legacy folder is left in place, so nothing is lost; delete it yourself once the preview is confirmed.
 
 ---
 
 ## CLI reference
 
 ```text
-python3 main.py --setup                 First-run onboarding
-python3 main.py --reconfigure           Change preferences
-python3 main.py --doi DOI               Extract by DOI
+python3 main.py --doi DOI               Extract an evidence pack by DOI
 python3 main.py --url URL               Extract by article URL
 python3 main.py --pdf PATH              Extract from a local PDF
-python3 main.py --batch-pdfs            Process all PDFs in input_pdfs/
+python3 main.py --batch-pdfs            Process every PDF in input_pdfs/
 python3 main.py --check-note [NOTE]     Check one note, or all papers/*.md
 python3 main.py --index NOTE            Add/update a row in papers/INDEX.md
 python3 main.py --list                  List evidence packs and notes
+python3 main.py --profile [--json]      Show the saved preferences
 python3 main.py --guide                 Print the quick-start guide
-python3 main.py --doctor                Run environment diagnostics
-python3 main.py                         Interactive menu (in a terminal)
+python3 main.py --doctor                Environment diagnostics
+python3 main.py                         Interactive menu (terminal only)
 ```
 
-With `pip install -e .`, the same commands are available as `geo-reader`, `geo-doctor`, and `geo-setup`.
+With `pip install -e .`, `geo-reader` and `geo-doctor` expose the same commands.
 
 ---
 
@@ -195,124 +206,83 @@ With `pip install -e .`, the same commands are available as `geo-reader`, `geo-d
 
 ```text
 geo-academic-reader/
-├── AGENTS.md                     Agent contract, SOP, and writing rules
-├── PROMPTS.md                    Copy-paste prompts for common tasks
-├── README.md / README.zh-CN.md
+├── AGENTS.md                     Agent contract, onboarding, SOP
+├── PROMPTS.md                    Copy-paste task prompts
+├── SKILL.md                      Skill manifest and condensed contract
 ├── input_pdfs/                   Drop-zone for raw PDFs
 ├── papers/
-│   ├── INDEX.md                  Human-facing literature index
-│   └── <slug>.md                 Agent-written notes
-├── assets/<slug>/fig_XX.png      Local figures referenced by notes
+│   ├── INDEX.md                  Literature catalog
+│   ├── <slug>.md                 Agent-written notes
+│   └── assets/<slug>/fig_XX.png  Figures, inside the note tree
 ├── .raw/<slug>/                  Evidence packs (git-ignored)
 │   ├── paper.json
 │   ├── fulltext.md
 │   ├── figures/manifest.json
 │   └── README.md
 ├── .geo-reader/                  Local profile and Chrome profile (git-ignored)
-├── templates/
-│   ├── paper_note.md
-│   └── literature_review.md
-├── rules/                        Journal, Markdown, and troubleshooting references
-├── scripts/                      Extraction, QA, onboarding, CLI
+├── templates/                    Note and review templates
+├── rules/                        Markdown, journal, troubleshooting references
+├── scripts/                      Extraction, QA, onboarding schema, CLI
 ├── main.py                       Workspace entry point
 ├── doctor.py                     Environment diagnostics
-├── install.py / install.sh / .ps1
-└── uninstall.py / uninstall.sh / .ps1
+└── install.* / uninstall.*
 ```
 
 ### Evidence-pack contract
 
-`paper.json` contains bibliographic metadata, the APA citation and its source, the extraction method, open-access information, warnings, statistics, and relative paths to the other files.
+`paper.json` holds bibliographic metadata, the APA string and whether it was constructed, the extraction method, open-access information, warnings, statistics, and relative paths.
 
-`fulltext.md` is raw extracted text with page markers when the source is a PDF. It is deliberately unpolished; it is evidence, not a summary.
+`fulltext.md` is raw extracted text with page markers for PDFs. It is evidence, not a summary.
 
-`figures/manifest.json` is the single source of truth for figures:
+`figures/manifest.json` is the sole authority for figures:
 
 | Field | Meaning |
 | :--- | :--- |
 | `id` | Stable identifier such as `fig_01` |
-| `label` | Caption label such as `Figure 2` when detectable |
+| `label` | Caption label such as `Figure 2`, when detectable |
 | `caption` | Caption text from the page or PDF |
-| `file` | Local filename in `assets/<slug>/` |
+| `file` | Filename under `papers/assets/<slug>/` |
 | `local_path` | Workspace-relative path |
-| `markdown_path` | Path to use in a note: `../assets/<slug>/fig_01.png` |
+| `markdown_path` | Path to use in a note: `assets/<slug>/fig_01.png` |
 | `origin` / `download` | `browser`, `http`, or `pdf`, and how the bytes were obtained |
-| `method` | Extraction method recorded per figure |
-| `source_url` | Original image URL, when known |
+| `source_url` | Original image URL |
 | `page` | PDF page number, when applicable |
 | `width`, `height`, `bytes` | Image dimensions and size |
-| `is_body_figure` | Whether the image looked like article content rather than page chrome |
+| `is_body_figure` | Whether the image looked like article content |
 
-Treat the manifest as authoritative. If a caption is empty, the note should say so rather than inventing a title.
-
----
-
-## Figures and VS Code troubleshooting
-
-The most common cause of "the image does not show in VS Code preview" is a path that is valid for one file but not for another, for example `./assets/...` or `/Users/you/...` inside `papers/<slug>.md`. Notes live in `papers/`, so the correct link is:
-
-```markdown
-![Figure 1: caption](../assets/<slug>/fig_01.png)
-```
-
-Run:
-
-```bash
-python3 main.py --check-note "papers/<slug>.md" --fix
-```
-
-This checks that the file exists, is non-empty, has valid image magic bytes, and resolves to `../assets/<slug>/...`. If an image is missing but exactly one file with the same name exists under `assets/`, `--fix` rewrites the link. It will not guess when multiple candidates exist.
-
-Other checks:
-
-- Confirm `assets/<slug>/fig_01.png` is a real image, not an HTML error page saved with a `.png` extension.
-- In VS Code, run **Markdown: Refresh Preview** from the Command Palette if the preview is stale.
-- Open the note from the workspace root so relative paths resolve consistently.
+If a caption is empty, the note must say so rather than invent one.
 
 ---
 
 ## Scope and limitations
 
-- **Access, not circumvention.** Browser-first extraction uses the Chrome session available on your machine to render pages and fetch images that your session can already access. It does not bypass paywalls or access controls. Respect publisher terms and your institution's licences.
-- **Cloudflare and bot challenges.** The pipeline waits and retries, but cannot always pass an interactive challenge. If a page is blocked, open it manually in the launched Chrome window, complete the challenge, then retry with `--browser existing`.
-- **Not every figure is recoverable.** Some publishers load figures through proprietary viewers, deliver them only in supplementary archives, or label them in ways that defeat caption matching. The manifest warnings tell you what failed.
-- **PDF fallback is a fallback.** With `pypdf`, embedded images may be low-resolution or lack captions. Install `pymupdf` for caption-aware cropping at higher resolution. Scanned PDFs without a text layer are not OCR'd.
-- **Metadata can be incomplete.** Crossref may not have a brand-new DOI, and constructed APA strings are marked as such in `paper.json`.
-- **Scripts do not write reviews.** If `papers/<slug>.md` is missing, that is expected: the agent has not written it yet.
+- **Paywalls stay paywalls.** Browser-first extraction renders what your session can already access.
+- **Bot checks are interactive.** The pipeline waits and retries; if a challenge appears, complete it in the launched Chrome window and retry with `--browser existing`.
+- **Not every figure is recoverable.** Proprietary viewers, supplementary-only figures, and unusual caption markup can defeat extraction. The manifest records what failed rather than hiding it.
+- **PDF fallback is lower quality.** Embedded bitmaps may be split or captionless; `pymupdf` improves cropping. Scanned PDFs are not OCR'd.
+- **Metadata can be incomplete.** New DOIs may not be in Crossref, and constructed citations are marked in `paper.json`.
+- **No review prose from scripts.** A missing `papers/<slug>.md` means the agent has not written it yet, not that extraction failed.
 
-For publisher-specific patterns, see [rules/JOURNALS.md](rules/JOURNALS.md). For failure recovery, see [rules/TROUBLESHOOTING.md](rules/TROUBLESHOOTING.md).
+Publisher-specific notes: [rules/JOURNALS.md](rules/JOURNALS.md). Recovery: [rules/TROUBLESHOOTING.md](rules/TROUBLESHOOTING.md). Operational lessons: [LESSONS.md](LESSONS.md).
 
 ---
 
-## Environment diagnosis
+## Diagnostics and cleanup
 
 ```bash
-python3 main.py --doctor
-# or
-python3 doctor.py
+python3 main.py --doctor        # Python, packages, Chrome, CDP 9222, profile, VS Code settings
 python3 doctor.py --json
 python3 doctor.py --install
 python3 doctor.py --launch-chrome
-```
 
-The doctor checks Python, required and optional packages, Chrome and CDP 9222, the saved profile, `.vscode/settings.json`, and workspace directories.
-
----
-
-## Cleanup and uninstallation
-
-```bash
-# Remove the package and local build caches
-python3 uninstall.py
-
-# Also remove dependencies and .venv (if present)
+python3 uninstall.py            # remove the package and build caches
 python3 uninstall.py --purge --yes
 ```
 
-Your `papers/`, `assets/`, and `.raw/` content is not deleted by the uninstaller.
+Your `papers/`, `papers/assets/`, and `.raw/` content is not deleted by the uninstaller.
 
 ---
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+[MIT](LICENSE)

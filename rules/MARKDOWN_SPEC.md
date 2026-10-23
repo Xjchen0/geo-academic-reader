@@ -25,22 +25,24 @@ tags: []
 - `title`, `journal`, `year`, `doi`, `source` are used by `--index`.
 - Keep `raw` pointing at the evidence pack so a future reader can audit the note.
 - Use `status: 已精读` only after `--check-note` passes.
-- Paths are relative to `papers/`, hence `../.raw/...` and `../assets/...`.
+- Paths are relative to `papers/`: `../.raw/...` for the evidence pack and `assets/...` for figures.
 
 ---
 
 ## 2. Figures
 
-Notes live in `papers/`, so a figure in `assets/<slug>/` has exactly one correct link form:
+Figures live in `papers/assets/<slug>/`, in the same directory tree as the note, so there is exactly one correct link form:
 
 ```markdown
-![图 1：图注](../assets/<slug>/fig_01.png)
+![图 1：图注](assets/<slug>/fig_01.png)
 *图 1：图注（来源：browser；原始链接：https://...）*
 ```
 
+Why the extra `papers/` level matters: VS Code's Markdown preview restricts local images to the workspace folder. If the user opens only `papers/` — a common habit — a project-root `assets/` folder is outside that root and every image silently fails, even though hovering the link in the editor shows a thumbnail. Keeping the library under `papers/` makes the note render when the user opens the project root, `papers/`, or the single `.md` file.
+
 Rules:
 
-- **Do not** use `./assets/...`, `assets/...`, absolute paths, `file://`, or a remote URL as the primary image.
+- **Do not** use `../assets/...`, `./assets/...`, absolute paths, `file://`, or a remote URL as the primary image.
 - Use the `markdown_path` value from `figures/manifest.json`.
 - Use the manifest caption. If it is empty, write `*图 1：原文未提供图注*`.
 - Do not rename files or invent `fig_01.jpg` when the manifest says `fig_01.png`.
@@ -56,9 +58,9 @@ The checker:
 
 1. resolves each local image against the note's directory;
 2. verifies the file exists, is non-empty, and has valid PNG/JPEG/GIF/WebP/TIFF magic bytes;
-3. warns if the file is outside `assets/`;
-4. requires the normalized relative path to equal `../assets/<slug>/...`;
-5. can rewrite a broken link when the target is unambiguous.
+3. errors if the file sits in a legacy root-level `assets/`;
+4. requires the normalized relative path to equal `assets/<slug>/...` under `papers/`;
+5. can rewrite a broken link and migrate legacy figures when the target is unambiguous.
 
 If the file itself is missing, do not hide the problem. Record it in the note and in the delivery summary.
 
@@ -169,7 +171,7 @@ python3 main.py --list
 ```
 
 - [ ] Front matter complete.
-- [ ] Every image resolves to `../assets/<slug>/...`.
+- [ ] Every image resolves to `assets/<slug>/...` and the file lives under `papers/assets/`.
 - [ ] Figure captions match the manifest.
 - [ ] No template placeholders or sample equations.
 - [ ] Evidence anchors are present for key claims.

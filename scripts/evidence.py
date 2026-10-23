@@ -7,7 +7,7 @@ The pipeline's contract is deliberately narrow:
     .raw/<slug>/paper.json
     .raw/<slug>/fulltext.md
     .raw/<slug>/figures/manifest.json
-    assets/<slug>/fig_01.png ...
+    papers/assets/<slug>/fig_01.png ...
 
 It does not write a review, a summary, or a literature note. Those are written
 by the agent from the evidence pack using templates/paper_note.md.
@@ -243,7 +243,7 @@ def _save_figures(
                 "file": filename,
                 "local_path": relative_posix(destination, PROJECT_ROOT),
 
-                "markdown_path": "../assets/{}/{}".format(slug, filename),
+                "markdown_path": "assets/{}/{}".format(slug, filename),
                 "origin": figure.get("origin", "unknown"),
                 "download": figure.get("download", figure.get("origin", "unknown")),
                 "method": figure.get("method", ""),
@@ -321,7 +321,7 @@ def _write_raw_readme(path: Path, slug: str, metadata: dict, figures: List[dict]
         "- `paper.json` — metadata and extraction provenance",
         "- `fulltext.md` — extracted text with page markers",
         "- `figures/manifest.json` — captions, provenance, dimensions and local paths",
-        "- `../../assets/{}/` — downloaded figure files".format(slug),
+        "- `../../papers/assets/{}/` — downloaded figure files (next to the notes)".format(slug),
         "",
         "## Figures",
         "",

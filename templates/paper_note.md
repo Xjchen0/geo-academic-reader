@@ -15,7 +15,7 @@ tags: []
 1. 只依据 ../.raw/{{SLUG}}/paper.json、fulltext.md、figures/manifest.json 写作。
 2. 禁止通用段落、占位公式、与本文无关的模板化结论；证据不足就写“原文未提供”。
 3. 每个关键结论后标注证据锚点：PDF 用（第 N 页），网页用（原文第 N 段/节）。
-4. 图注必须来自 manifest；不要给图编造标题。图片路径固定为 ../assets/{{SLUG}}/fig_XX.png。
+4. 图注必须来自 manifest；不要给图编造标题。图片路径固定为 assets/{{SLUG}}/fig_XX.png。
 5. 逐图解读要说明坐标轴、变量、对照组、拐点/异常，以及该图支持/不支持什么结论。
 6. 学术中立：不写“颠覆一切”“彻底终结”“完美解决”等措辞。
 7. 完成后运行：python3 main.py --check-note papers/{{SLUG}}.md --fix
@@ -63,7 +63,7 @@ tags: []
 
 ### 图 1：{{图注中的核心对象}}
 
-![图 1：{{CAPTION}}](../assets/{{SLUG}}/fig_01.png)
+![图 1：{{CAPTION}}](assets/{{SLUG}}/fig_01.png)
 *图 1：{{CAPTION}}（来源：{{ORIGIN}}；原始链接：{{SOURCE_URL}}）*
 
 > [!TIP] 读图要点
@@ -73,7 +73,7 @@ tags: []
 
 ### 图 2：{{...}}
 
-![图 2：{{CAPTION}}](../assets/{{SLUG}}/fig_02.png)
+![图 2：{{CAPTION}}](assets/{{SLUG}}/fig_02.png)
 *图 2：{{CAPTION}}（来源：{{ORIGIN}}；原始链接：{{SOURCE_URL}}）*
 
 {{同上。若 manifest 中没有图 2，请删除本节。}}

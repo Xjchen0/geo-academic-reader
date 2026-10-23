@@ -1,21 +1,83 @@
-# AGENTS.md — geo-academic-reader v0.2.1
+# AGENTS.md — geo-academic-reader v0.2.2
 
 > **Read this file before doing any literature task in this workspace.**
 > The workspace turns papers (DOI / URL / PDF) into a **raw evidence pack**, then the agent writes a **VS Code-ready literature note** from that evidence. The Python pipeline never writes review prose.
 
 ---
 
-## 0. First run: load the user profile
+## 0. First run: conversational onboarding (mandatory)
 
-At the start of every session:
+There is **no setup script and no wizard**. A first-time user must leave no trace until the agent has talked to them. The trigger instructions live here and in `PROMPTS.md`.
 
-1. Read `.geo-reader/profile.json` if it exists.
-2. If it does not exist, ask the user to run:
-   ```bash
-   python3 main.py --setup
-   ```
-   or run the wizard yourself when the user wants guidance. Do not silently assume preferences.
-3. Adapt your behaviour to the profile:
+### 0.1 Check for a profile
+
+At the start of every session, read `.geo-reader/profile.json`:
+
+```bash
+python3 main.py --profile --json
+```
+
+- `"exists": true` → load the values and continue. **Never re-onboard** a returning user.
+- `"exists": false` → run the onboarding below **before** extracting any paper, even if the user's first message already contains a DOI, URL or PDF. Do not ask the user to run a command. Do not create `.geo-reader/` yet.
+
+### 0.2 Ask, in conversation
+
+Use the agent's question UI when available (Qoder `AskUserQuestion`, Claude Code choices, etc.). Otherwise ask in two compact numbered batches. Accept short answers such as `1A 2B 3A ...`.
+
+**Batch 1 — how to work**
+1. **Language** for notes and replies: `zh-CN` (中文) / `en` / `bilingual`.
+2. **Editor** where Markdown is read: `vscode` / `cursor` / `claude-code` / `antigravity` / `windsurf` / `cli`.
+3. **Instruction style**:
+   - `guided` — one stage at a time, outline first, confirm key claims.
+   - `balanced` — autonomous extraction + writing, ask only about scope, paywalls or ambiguity.
+   - `expert` — batch work, minimal narration, final report.
+
+**Batch 2 — extraction defaults**
+4. **Browser policy**: `auto` (reuse/launch Chrome, high-resolution figures first) / `existing` (only reuse CDP 9222) / `off` (HTTP/PDF fallback).
+5. **Note depth**: `brief` (1-page brief) / `standard` (IMRaD) / `deep` (per-figure reading).
+6. **Citation format**: `apa` / `nature` / `gbt7714`.
+7. Optional: **agent name** and a **contact email** for polite Crossref/OpenAlex requests. Both may be skipped.
+
+If the user says “use defaults”, take `zh-CN`, `vscode`, `balanced`, `auto`, `deep`, `apa`. Say which defaults were used.
+
+### 0.3 Persist the answers
+
+Write `.geo-reader/profile.json` yourself (create the directory). Use this schema:
+
+```json
+{
+  "version": 1,
+  "language": "zh-CN",
+  "ide": "vscode",
+  "agent": "qoder",
+  "style": "balanced",
+  "browser": "auto",
+  "note_depth": "deep",
+  "citation": "apa",
+  "citation_contact": "",
+  "created_at": "2026-10-24T10:00:00+08:00",
+  "updated_at": "2026-10-24T10:00:00+08:00"
+}
+```
+
+- Allowed values are enforced by `scripts/config.py:PROFILE_CHOICES`.
+- Keep `created_at` when updating; refresh `updated_at`.
+- Tell the user one line: “偏好已保存；以后直接给我 DOI / URL / PDF 即可。”
+- Then show the working loop in three short lines so a first-time user learns the commands without reading the README:
+  1. `python3 main.py --doi "<DOI>"` produces `.raw/<slug>/` and `papers/assets/<slug>/`.
+  2. You write `papers/<slug>.md` from `templates/paper_note.md`; figures use `assets/<slug>/fig_XX.png`.
+  3. `python3 main.py --check-note papers/<slug>.md --fix` then `--index` closes the loop.
+  Mention that copy-paste prompts are in `PROMPTS.md` and that `重新设置偏好` changes the profile.
+- `.geo-reader/` is git-ignored and stays local.
+
+### 0.4 Reconfigure and persistence
+
+- Trigger phrases: `开始使用`, `首次使用`, `Start`, `Set up`, or any first literature request while the profile is missing.
+- `重新设置偏好` / `Reconfigure` → ask the questions again, update the existing profile, keep `created_at`.
+- Preferences persist across sessions and across repeated tests. Never delete or reset `.geo-reader/profile.json` just because the code was updated.
+- If the profile is corrupted, back it up to `.geo-reader/profile.json.bak`, ask the questions again, then rewrite it.
+
+### 0.5 Adapt to the profile
 
 | Profile field | Values | Agent behaviour |
 | :--- | :--- | :--- |
@@ -29,10 +91,7 @@ At the start of every session:
 | `note_depth` | `brief` / `standard` / `deep` | 1-page brief / standard IMRaD / per-figure deep read. |
 | `citation` | `apa` / `nature` / `gbt7714` | Citation format for the reference section. |
 
-The onboarding choices are also printed by:
-```bash
-python3 main.py --guide
-```
+`python3 main.py --guide` prints the same choices for the user.
 
 ---
 
@@ -59,18 +118,30 @@ The pipeline writes the actual origin into `figures/manifest.json` (`browser`, `
 
 ### 1.3 Image paths must render in VS Code (P0)
 
-- Notes live in `papers/`; figures live in `assets/<slug>/`.
-- The only valid relative form is:
-  ```markdown
-  ![图 1：图注](../assets/<slug>/fig_01.png)
-  ```
-- **Never** use `./assets/...` or `assets/...` from a note in `papers/`; those resolve to `papers/assets/...` and show a broken image.
-- Do not use HTML `<img>` tags or absolute `file://` paths.
+The figure library lives **inside `papers/`**, next to the notes:
+
+```text
+papers/
+├── <slug>.md
+├── INDEX.md
+└── assets/
+    └── <slug>/
+        └── fig_01.png
+```
+
+The only valid form is note-relative and never leaves `papers/`:
+
+```markdown
+![图 1：图注](assets/<slug>/fig_01.png)
+```
+
+- **Never** use `../assets/...`, `./assets/...`, `/Users/.../assets/...`, `file://...`, or HTML `<img>`.
+- Why: VS Code's Markdown preview only loads local images under the current workspace root (or the note's own folder for single-file windows). A project-root `assets/` directory breaks when the user opens `papers/` or a single note — the link hovers still work, which makes the failure look inconsistent.
 - Before claiming completion, run:
   ```bash
   python3 main.py --check-note papers/<slug>.md --fix
   ```
-  This verifies file existence, non-zero size, image magic bytes, relative path correctness, placeholder content and unbalanced `$$`.
+  This verifies file existence, non-zero size, image magic bytes, note-relative paths, placeholder content and unbalanced `$$`. With `--fix` it also migrates legacy root-level `assets/` into `papers/assets/` and rewrites the links.
 
 ### 1.4 Academic neutrality
 
@@ -89,15 +160,15 @@ The pipeline writes the actual origin into `figures/manifest.json` (`browser`, `
 | `.raw/<slug>/fulltext.md` | Extracted text with page / section markers. |
 | `.raw/<slug>/figures/manifest.json` | Figure captions, origin, dimensions, local paths. |
 | `.raw/<slug>/README.md` | Human-readable evidence summary + next steps. |
-| `assets/<slug>/fig_01.png` | Final figure files referenced by notes. |
+| `papers/assets/<slug>/fig_01.png` | Final figure files referenced by notes. |
 | `papers/<slug>.md` | Agent-written literature note (the only review artifact). |
 | `papers/INDEX.md` | Note catalog, maintained by `--index`. |
 | `templates/paper_note.md` | Mandatory single-paper note template. |
 | `templates/literature_review.md` | Multi-paper review template. |
-| `PROMPTS.md` | Copy-paste prompts for users. |
+| `PROMPTS.md` | Copy-paste prompts for users, including first-run triggers. |
 | `rules/` | Scraping, KaTeX, troubleshooting details. |
 
-`.raw/` and `.geo-reader/` are local and git-ignored. `papers/` and `assets/` are the durable knowledge base.
+`.raw/` and `.geo-reader/` are local and git-ignored. `papers/` (notes **and** their assets) is the durable, self-contained knowledge base.
 
 ---
 
@@ -229,13 +300,13 @@ For a review covering multiple papers, use `templates/literature_review.md`; eve
 
 ## 7. Completion checklist
 
-- [ ] Profile read (or user asked to run `--setup`).
+- [ ] Profile exists (or onboarding completed in this conversation and saved).
 - [ ] `doctor.py` clean, or limitations stated.
 - [ ] Evidence pack exists: `paper.json`, `fulltext.md`, `figures/manifest.json`.
 - [ ] Figures preferred from browser; PDF fallback explicitly marked.
 - [ ] Note written from `templates/paper_note.md`; no placeholder prose.
 - [ ] Every key claim has an evidence anchor.
-- [ ] Every image uses `../assets/<slug>/...` and passes `--check-note`.
+- [ ] Every image uses `assets/<slug>/...` inside `papers/` and passes `--check-note`.
 - [ ] `papers/INDEX.md` updated with `--index`.
 - [ ] User received paths, figure origin and warnings.
 
@@ -245,10 +316,12 @@ For a review covering multiple papers, use `templates/literature_review.md`; eve
 
 | Symptom | Action |
 | :--- | :--- |
+| No profile | Onboard in conversation, then write `.geo-reader/profile.json`; never ask for `--setup` |
 | Chrome not running | `python3 main.py --doi ... --browser auto` (launches it) |
 | Cloudflare challenge | Complete the check in the opened Chrome window; retry with `--wait 8` |
 | 0 figures from browser | Check `manifest.json`; retry URL instead of DOI; then HTTP; PDF last |
-| Images not visible in VS Code | `python3 main.py --check-note papers/<slug>.md --fix` |
+| Images not visible in VS Code | Run `--check-note --fix`; confirm the note uses `assets/<slug>/...`, not `../assets/...` |
+| Legacy root `assets/` | `python3 main.py --check-note --fix` copies files into `papers/assets/` and rewrites links |
 | Note looks generic | Delete it and re-write from the evidence pack; never keep placeholder prose |
 | Crossref 404 | Use `--url` or `--pdf`; the pipeline will still build an evidence pack |
 

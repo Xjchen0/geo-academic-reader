@@ -11,15 +11,15 @@ from typing import Optional
 
 from .config import (
     INPUT_PDFS_DIR,
-    PROFILE_CHOICES,
+    PROFILE_PATH,
     PROJECT_ROOT,
     is_tty,
     load_profile,
-    PROFILE_PATH,
+    profile_exists,
 )
 from .evidence import extract_evidence
 from .note_check import check_notes, index_note, list_workspace
-from .onboarding import print_guide, run_wizard
+from .onboarding import print_guide, print_profile, profile_summary
 from .version import __version__
 
 BANNER = r"""
@@ -34,7 +34,7 @@ MENU = r"""
   [2] 精读网页 URL
   [3] 精读本地 PDF（自动找 DOI，优先浏览器高清图）
   [4] 批量解析 input_pdfs/ 下的 PDF
-  [5] 修改偏好 / 重新引导
+  [5] 查看当前偏好（修改请在对话中说“重新设置偏好”）
   [6] 检查笔记图片与格式（可 --fix）
   [7] 把笔记登记到 papers/INDEX.md
   [8] 查看证据包与笔记列表
@@ -45,13 +45,7 @@ MENU = r"""
 
 
 def _profile_summary(profile: dict) -> str:
-    return "语言={language} | 环境={ide} | 风格={style} | 浏览器={browser} | 深度={depth}".format(
-        language=profile.get("language", "zh-CN"),
-        ide=profile.get("ide", "vscode"),
-        style=profile.get("style", "balanced"),
-        browser=profile.get("browser", "auto"),
-        depth=profile.get("note_depth", "deep"),
-    )
+    return profile_summary(profile)
 
 
 def _run_doctor() -> int:
@@ -77,7 +71,7 @@ def _print_extraction_summary(result: dict) -> None:
     print("\n下一步（由 Agent 完成，脚本不写综述）：")
     print("  1. 读取 {} 与 {}".format(result["paper_json"], result["fulltext"]))
     print("  2. 按 templates/paper_note.md 写 {}".format(result["next_note"]))
-    print("     图片统一使用 ../assets/{}/fig_XX.png".format(result["slug"]))
+    print("     图片统一使用 assets/{}/fig_XX.png".format(result["slug"]))
     print("  3. python3 main.py --check-note {} --fix".format(result["next_note"]))
     print("  4. python3 main.py --index {}".format(result["next_note"]))
     print("=" * 64 + "\n")
@@ -138,6 +132,8 @@ def _print_lists(payload: dict) -> None:
 def interactive_menu() -> int:
     profile = load_profile()
     print(BANNER)
+    if not profile_exists():
+        print("尚未建立偏好：本次使用默认值。通过 Agent 使用时，请先说「开始使用」。")
     print("当前偏好：{}".format(_profile_summary(profile)))
     print(MENU)
     try:
@@ -155,7 +151,7 @@ def interactive_menu() -> int:
     if choice == "4":
         return _run_batch(_default_args())
     if choice == "5":
-        run_wizard()
+        print_profile(profile)
         return 0
     if choice == "6":
         target = input("笔记路径（留空检查 papers/ 下全部）: ").strip()
@@ -213,32 +209,21 @@ def build_parser() -> argparse.ArgumentParser:
     group.add_argument("--url", help="Direct URL to the article")
     group.add_argument("--pdf", help="Path to a local PDF")
     group.add_argument("--batch-pdfs", action="store_true", help="Process all PDFs in input_pdfs/")
-    group.add_argument("--setup", action="store_true", help="Run the first-use onboarding wizard")
-    group.add_argument("--reconfigure", action="store_true", help="Re-run onboarding and overwrite preferences")
     group.add_argument("--doctor", action="store_true", help="Run doctor.py")
     group.add_argument("--check-note", nargs="?", const="", metavar="NOTE", help="Check image paths and placeholders in a note (or all papers/*.md)")
     group.add_argument("--index", metavar="NOTE", help="Append/update a note row in papers/INDEX.md")
     group.add_argument("--list", action="store_true", help="List evidence packs and notes")
+    group.add_argument("--profile", action="store_true", help="Show the saved preferences (or whether onboarding is still pending)")
     group.add_argument("--guide", action="store_true", help="Print the quick-start guide")
 
-    parser.add_argument("--browser", choices=PROFILE_CHOICES["browser"], help="Browser policy (default: profile)")
+    parser.add_argument("--browser", choices=["auto", "existing", "off"], help="Browser policy (default: profile)")
     parser.add_argument("--no-browser", dest="browser", action="store_const", const="off", help="Alias for --browser off")
     parser.add_argument("--wait", type=float, default=4.0, help="Seconds to wait after page load (default: 4)")
     parser.add_argument("--max-figures", type=int, default=30, help="Maximum figures to download (default: 30)")
-    parser.add_argument("--fix", action="store_true", help="With --check-note: rewrite broken image paths")
+    parser.add_argument("--fix", action="store_true", help="With --check-note: rewrite broken paths and migrate legacy assets/")
     parser.add_argument("--strict", action="store_true", help="Treat warnings as errors in --check-note")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON")
     parser.add_argument("--quiet", action="store_true", help="Reduce progress output")
-
-    # Onboarding overrides (also usable with --setup --non-interactive).
-    parser.add_argument("--language", choices=PROFILE_CHOICES["language"])
-    parser.add_argument("--ide", choices=PROFILE_CHOICES["ide"])
-    parser.add_argument("--style", choices=PROFILE_CHOICES["style"])
-    parser.add_argument("--depth", choices=PROFILE_CHOICES["note_depth"])
-    parser.add_argument("--citation", choices=PROFILE_CHOICES["citation"])
-    parser.add_argument("--agent")
-    parser.add_argument("--citation-contact", dest="citation_contact")
-    parser.add_argument("--non-interactive", action="store_true", help="Use defaults/overrides without prompting")
     return parser
 
 
@@ -246,23 +231,9 @@ def main(argv=None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if args.setup or args.reconfigure:
-        overrides = {
-            "language": args.language,
-            "ide": args.ide,
-            "style": args.style,
-            "browser": args.browser,
-            "note_depth": args.depth,
-            "citation": args.citation,
-            "agent": args.agent,
-            "citation_contact": args.citation_contact,
-        }
-        overrides = {key: value for key, value in overrides.items() if value}
-        run_wizard(
-            non_interactive=args.non_interactive or not is_tty(),
-            overrides=overrides,
-        )
-        return 0
+    if (args.doi or args.url or args.pdf or args.batch_pdfs) and not args.json:
+        if not profile_exists():
+            print("提示：尚未建立偏好，本次使用默认值。通过 Agent 使用时，请先说「开始使用」。\n")
 
     if args.doctor:
         return _run_doctor()
@@ -292,6 +263,21 @@ def main(argv=None) -> int:
         print_guide(load_profile())
         return 0
 
+    if args.profile:
+        if args.json:
+            print(json.dumps(
+                {
+                    "path": str(PROFILE_PATH),
+                    "exists": profile_exists(),
+                    "values": load_profile() if profile_exists() else None,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ))
+        else:
+            print_profile(load_profile())
+        return 0
+
     if args.doi:
         return _run_extraction("doi", args.doi, args)
     if args.url:
@@ -303,17 +289,13 @@ def main(argv=None) -> int:
 
     # No action selected.
     if len(sys.argv) == 1:
-        if not PROFILE_PATH.exists():
+        if not profile_exists():
             print(BANNER)
-            print("检测到首次使用。建议先运行 1 分钟引导：python3 main.py --setup")
-            if is_tty():
-                try:
-                    answer = input("现在进入引导？[Y/n]: ").strip().lower()
-                except (KeyboardInterrupt, EOFError):
-                    answer = "n"
-                if answer not in ("n", "no"):
-                    run_wizard()
-                    return 0
+            print("首次使用：这个工作区还没有偏好记录。")
+            print("请在对话里对 Agent 说「开始使用」，它会用几个问题了解你的偏好；")
+            print("不需要运行任何设置脚本。说明见 AGENTS.md 第 0 节。")
+            print("\n也可以直接给出论文 DOI / URL / PDF 路径，Agent 会先完成引导再开始。")
+            return 0
         if is_tty():
             return interactive_menu()
         parser.print_help()
