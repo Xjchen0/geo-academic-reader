@@ -1,0 +1,40 @@
+preset:
+  name: geo-academic-reader
+  version: "0.0.1-pre"
+  license: "MIT"
+  description: "Academic literature reader and VS Code rich-media Markdown generator for geosciences and general science."
+
+compatibility:
+  python: ">=3.9"
+  os: ["darwin", "linux", "windows"]
+  tools: ["python3", "pypdf", "requests", "beautifulsoup4"]
+  optional_tools: ["google-chrome (port 9222)"]
+
+network_policies:
+  academic_sources:
+    name: academic_sources
+    endpoints:
+      - host: api.crossref.org
+        port: 443
+        protocol: rest
+      - host: doi.org
+        port: 443
+        protocol: rest
+      - host: www.nature.com
+        port: 443
+        protocol: https
+      - host: media.springernature.com
+        port: 443
+        protocol: https
+      - host: www.science.org
+        port: 443
+        protocol: https
+      - host: www.biorxiv.org
+        port: 443
+        protocol: https
+      - host: arxiv.org
+        port: 443
+        protocol: https
+      - host: 127.0.0.1
+        port: 9222
+        protocol: http

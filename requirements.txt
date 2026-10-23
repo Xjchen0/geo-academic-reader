@@ -1,0 +1,7 @@
+# Academic Paper Reader - Core Python Dependencies
+# Lightweight, cross-platform, zero Node.js dependencies
+
+requests>=2.28.0
+beautifulsoup4>=4.11.0
+pypdf>=3.9.0
+websockets>=11.0
