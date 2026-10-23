@@ -1,20 +1,23 @@
 preset:
   name: geo-academic-reader
-  version: "0.0.1-pre"
+  version: "0.2.1"
   license: "MIT"
-  description: "Academic literature reader and VS Code rich-media Markdown generator for geosciences and general science."
+  description: "Browser-first evidence extraction and VS Code literature-note workflow for geosciences and general science. Scripts extract evidence; agents write notes."
 
 compatibility:
   python: ">=3.9"
   os: ["darwin", "linux", "windows"]
-  tools: ["python3", "pypdf", "requests", "beautifulsoup4"]
-  optional_tools: ["google-chrome (port 9222)"]
+  tools: ["python3", "requests", "beautifulsoup4", "pypdf", "websockets"]
+  optional_tools: ["google-chrome", "chromium", "microsoft-edge", "pymupdf"]
 
 network_policies:
   academic_sources:
     name: academic_sources
     endpoints:
       - host: api.crossref.org
+        port: 443
+        protocol: rest
+      - host: api.openalex.org
         port: 443
         protocol: rest
       - host: doi.org
@@ -29,12 +32,27 @@ network_policies:
       - host: www.science.org
         port: 443
         protocol: https
+      - host: www.sciencedirect.com
+        port: 443
+        protocol: https
+      - host: els-cdn.com
+        port: 443
+        protocol: https
+      - host: agupubs.onlinelibrary.wiley.com
+        port: 443
+        protocol: https
       - host: www.biorxiv.org
         port: 443
         protocol: https
       - host: arxiv.org
         port: 443
         protocol: https
+      - host: www.ncbi.nlm.nih.gov
+        port: 443
+        protocol: https
+  local_browser:
+    name: local_browser
+    endpoints:
       - host: 127.0.0.1
         port: 9222
         protocol: http

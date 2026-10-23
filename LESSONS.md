@@ -1,34 +1,68 @@
-# Lessons — academic-paper-reader
+# LESSONS — Operational Notes
 
-This file records operational wisdom and agent runtime optimization techniques discovered across iterations.
+Observations from running this workspace on real papers. The theme is the same throughout: keep extraction and interpretation separate, and keep the parent context small.
 
 ---
 
-## [tags: context, token-budget, agent-loop] Context Pressure & Long Papers
-- Full scientific papers easily exceed 15,000–30,000 words (40k+ tokens), risking context window overflow or early agent context compaction.
-- **Rule**: Never dump raw 100-page full-text into conversation history. Extract structured subsections (Abstract, Introduction hypotheses, Key Results per figure, Limitations) before generating the final synthesis.
-- After extracting figure URLs and captions, immediately persist them to `./assets/` and generate the working notes.
+## [tags: architecture, evidence, separation] Scripts Extract, Agents Interpret
 
-## [tags: figures, resolution, cdn, assets] High-Resolution Figure Extraction
-- Publishers frequently serve low-res thumbnails (`/w400/`, `.medium.gif`) inside initial DOM `<figure>` tags.
-- Always apply pattern rewrites (e.g. `/w400/` $\to$ `/w960/` for Nature, `.medium.gif` $\to$ `.large.jpg` for bioRxiv) before downloading.
-- If a CDN URL returns 403 on direct curl, download it directly from the Chrome CDP context via JavaScript `fetch()`.
+- The most damaging failure was a generator that produced plausible paragraphs and sample equations for every paper. It made notes look complete while destroying trust in them.
+- The current contract is narrow on purpose: `.raw/<slug>/paper.json`, `fulltext.md`, `figures/manifest.json`, and `assets/<slug>/` only. No review text is generated.
+- When a note looks thin, the fix is better evidence or an honest `原文未提供`, not a more fluent template.
+- If the evidence pack and the note disagree about figure origin, the manifest wins.
 
-## [tags: paywalls, cloudflare, anti-bot, cdp] Chrome CDP vs. Open Access Strategy
-- Open Access repositories (bioRxiv, medRxiv, arXiv, Europe PMC) do NOT require browser automation. Use direct HTTP APIs to save CPU and RAM.
-- Nature, Science, Elsevier, and Wiley pages often activate Cloudflare challenge or dynamic JS rendering. Route these through the active Chrome 9222 instance.
-- Always run `doctor.py` to confirm whether Chrome 9222 is alive before initiating complex journal crawls.
+## [tags: figures, browser-first, resolution] Browser First, PDF Second
 
-## [tags: katex, math, vscode, rendering] KaTeX Mathematics in VS Code
-- Modern VS Code (v1.58+) natively renders KaTeX in its Markdown Preview.
-- Do NOT convert LaTeX formulas into inline SVG tags or base64 images unless publishing to WeChat or restrictive platforms. Native KaTeX preserves readability and allows users to copy equations directly.
-- Ensure math is delimited with `$..$` (inline) and `$$..$$` (display block) with no space immediately after opening or before closing `$`.
+- Publisher thumbnails (`/w400/`, `/lw685/`, `.medium.gif`) are often what appears in the initial DOM. Rewrite to `/full/`, `/w1200/`, or `.large.jpg` before downloading.
+- A rendered page is the best source for figure order, captions, and panel structure. PDF embedded images often split a multi-panel figure or lose the caption entirely.
+- For a PDF with a DOI, the pipeline still opens the publisher page. PDF figures are only a fallback, and `paper.json.method` must reflect that.
+- Direct image URLs may return 403 even when the page is accessible. Fetching in the page context works because the browser supplies the session and referer.
+- Never describe a PDF bitmap as a "high-resolution publisher figure".
 
-## [tags: tone, objectivity, academic-neutrality] Academic Tone & Anti-Hyperbole
-- Academic interpretations must remain strictly objective and scholarly.
-- Flag and eliminate any sensationalist jargon (e.g., "颠覆一切", "终结争议", "前所未有").
-- Emphasize boundary conditions, model assumptions, and limitations under a dedicated `> [!WARNING]` callout.
+## [tags: access, cloudflare, ethics] Access Is Not Bypass
 
-## [tags: subagent, delegation, isolation] Subagent Delegation
-- When analyzing a batch of papers (e.g., 5–10 papers from a journal TOC), delegate each paper extraction to a distinct subagent with isolated context.
-- The parent agent should only receive the resulting Markdown path and a concise executive summary, keeping the parent context clean.
+- Reusing the user's Chrome session is about rendering and figure access, not circumventing paywalls.
+- Cloudflare and similar checks are interactive. Wait, complete them manually if needed, then retry with `--browser existing`.
+- Batch jobs run sequentially. Parallel crawls against one publisher are both fragile and impolite.
+- Open-access PDFs (OpenAlex, arXiv, bioRxiv, PMC) are preferable for text. Use the paywalled page only for what the session can already see.
+
+## [tags: captions, manifest, honesty] Captions Are Evidence
+
+- Caption extraction is the weakest link. A figure may have no `figcaption`, a caption shared across panels, or a caption far from the image.
+- The manifest records what was found. The note must not upgrade an empty caption into a confident title.
+- When `is_body_figure` is false or uncertain, check the image manually before using it. Page chrome and inline icons sometimes survive filtering.
+- If a figure is missing, say which figure and why (paywall, 403, viewer), instead of silently dropping it.
+
+## [tags: context, token-budget, agent-loop] Context Pressure
+
+- A full paper can be 15k–30k words. Dumping it into the parent conversation invites compaction and loses the thread.
+- Read `fulltext.md` in sections, or delegate one paper per subagent. Keep only the structured conclusions in the parent.
+- Persist intermediate findings to the note or a scratch file instead of repeating them in chat.
+- For a batch, process one paper at a time: extract → write → QA → index. Do not extract all papers first and then try to hold them all in context.
+
+## [tags: qa, vscode, images] Preview Failures Are Usually Paths
+
+- Notes live in `papers/`; images live in `assets/<slug>/`. The only correct link is `../assets/<slug>/fig_XX.png`.
+- `--check-note --fix` catches missing files, zero-byte files, invalid magic bytes, paths outside `assets/`, and non-standard relative paths.
+- A zero-byte or HTML file with a `.png` extension is worse than a missing figure because it looks present. Validate magic bytes.
+- Do not "fix" a report by deleting figures. Fix the path or report the missing evidence.
+
+## [tags: katex, math, vscode] Formulas
+
+- VS Code renders KaTeX natively; no Node.js or SVG conversion.
+- Only reproduce equations present in the source. Sample equations are a tell that the note was templated.
+- Keep display math balanced; an odd number of `$$` breaks the rest of the preview.
+- Use `\$` for literal currency.
+
+## [tags: tone, objectivity] Academic Neutrality
+
+- Ban `颠覆一切`, `彻底终结`, `完美解决`, `前所未有`, and similar phrasing.
+- Distinguish the authors' claims, the data, and your inference. A note that merges all three is not useful for later citation.
+- Put boundary conditions and sample limitations in a `> [!WARNING]` block, not in a closing flourish.
+
+## [tags: subagent, delegation, batch] Subagent Delegation
+
+- Delegate one paper per subagent when the batch is larger than two or three papers.
+- Give each subagent: the slug, the evidence-pack paths, the note template, the QA commands, and the instruction not to invent content.
+- The parent should receive the note path, a 3–5 sentence summary, figure count and origin, QA status, and any unresolved warnings.
+- Review at least one subagent-produced note yourself before trusting the batch; template drift is contagious.

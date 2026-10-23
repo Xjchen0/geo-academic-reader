@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 geo-academic-reader: One-Click Cross-Platform Uninstaller & Environment Cleaner
-Version: 0.0.1-pre (MIT License)
+Version: 0.2.1 (MIT License)
 Safely removes installed packages, entry point binaries, build artifacts, and caches.
 """
 
@@ -17,7 +17,7 @@ def print_banner():
     print(r"""
 ===================================================================
     🧹 geo-academic-reader | Uninstaller & Environment Cleaner
-                 Version: 0.0.1-pre (MIT License)
+                 Version: 0.2.1 (MIT License)
 ===================================================================
     """)
 
@@ -70,7 +70,7 @@ def main():
     parser.add_argument(
         "--purge",
         action="store_true",
-        help="Also uninstall dependencies (requests, beautifulsoup4, pypdf, websockets) and delete local .venv if present."
+        help="Also uninstall dependencies (requests, beautifulsoup4, pypdf, websockets, pymupdf) and delete local .venv if present."
     )
     parser.add_argument(
         "--clean-only",
@@ -97,7 +97,7 @@ def main():
     print("\n[*] Target package for uninstallation:")
     print("    - geo-academic-reader (CLI tools: geo-reader, geo-doctor)")
     if args.purge:
-        print("    - Dependencies: beautifulsoup4, pypdf, websockets")
+        print("    - Dependencies: beautifulsoup4, pypdf, websockets, pymupdf")
         print("    - Local virtualenv: .venv/ (if exists)")
 
     if not args.yes:
@@ -120,7 +120,7 @@ def main():
 
     # 2. If purge is requested, remove dependencies
     if args.purge:
-        deps = ["beautifulsoup4", "pypdf", "websockets"]
+        deps = ["beautifulsoup4", "pypdf", "websockets", "pymupdf"]
         print("\n[*] Purging dependencies...")
         for dep in deps:
             if has_uv:

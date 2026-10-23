@@ -1,64 +1,177 @@
 # VS Code Markdown & KaTeX Specification
 
-This document details the typography, mathematics, and layout specifications required to achieve optimal visual quality in modern VS Code Markdown Preview.
+This document defines the writing and layout rules for notes in `papers/`. The built-in QA (`python3 main.py --check-note`) enforces part of it; the rest is the agent's responsibility.
 
 ---
 
-## 1. Mathematical Formulas (KaTeX)
+## 1. Front Matter
 
-VS Code natively bundles KaTeX. Follow these strict rules to avoid math rendering errors:
+Every note starts with YAML front matter so that `--index` can build the catalog without guessing:
 
-- **Inline Math**: Delimited by single dollar signs `$...$`.
-  - **Correct**: `$E = mc^2$`, `$\alpha \in [0, 1]$`
-  - **Caution**: Do **not** leave a space immediately after the opening `$` or before the closing `$`. Write `$x + y$`, not `$ x + y $`.
-- **Display / Block Math**: Delimited by double dollar signs on their own lines:
+```yaml
+---
+title: "Paper title"
+journal: "Nature Communications"
+year: 2026
+doi: "10.1038/s41467-026-69772-8"
+source: "https://www.nature.com/articles/s41467-026-69772-8"
+raw: "../.raw/10.1038_s41467-026-69772-8/paper.json"
+status: 已精读
+reviewed_at: "2026-10-24"
+tags: []
+---
+```
+
+- `title`, `journal`, `year`, `doi`, `source` are used by `--index`.
+- Keep `raw` pointing at the evidence pack so a future reader can audit the note.
+- Use `status: 已精读` only after `--check-note` passes.
+- Paths are relative to `papers/`, hence `../.raw/...` and `../assets/...`.
+
+---
+
+## 2. Figures
+
+Notes live in `papers/`, so a figure in `assets/<slug>/` has exactly one correct link form:
+
+```markdown
+![图 1：图注](../assets/<slug>/fig_01.png)
+*图 1：图注（来源：browser；原始链接：https://...）*
+```
+
+Rules:
+
+- **Do not** use `./assets/...`, `assets/...`, absolute paths, `file://`, or a remote URL as the primary image.
+- Use the `markdown_path` value from `figures/manifest.json`.
+- Use the manifest caption. If it is empty, write `*图 1：原文未提供图注*`.
+- Do not rename files or invent `fig_01.jpg` when the manifest says `fig_01.png`.
+- If a note has no figures, remove the figure section rather than adding placeholder images.
+
+### Diagnosing a missing image
+
+```bash
+python3 main.py --check-note "papers/<slug>.md" --fix
+```
+
+The checker:
+
+1. resolves each local image against the note's directory;
+2. verifies the file exists, is non-empty, and has valid PNG/JPEG/GIF/WebP/TIFF magic bytes;
+3. warns if the file is outside `assets/`;
+4. requires the normalized relative path to equal `../assets/<slug>/...`;
+5. can rewrite a broken link when the target is unambiguous.
+
+If the file itself is missing, do not hide the problem. Record it in the note and in the delivery summary.
+
+---
+
+## 3. Mathematics (KaTeX)
+
+VS Code renders KaTeX natively. No extension is needed.
+
+- Inline: `$E = mc^2$`, `$\sigma_{ij}$`.
+- Display:
+
   ```markdown
   $$
   \frac{\partial \mathbf{u}}{\partial t} + (\mathbf{u} \cdot \nabla)\mathbf{u} = -\frac{1}{\rho}\nabla p + \nu \nabla^2 \mathbf{u}
   $$
   ```
-- **Dollar Currency Escaping**: Literal dollar signs in body text must be escaped with a backslash: `\$100` or enclosed in backticks `` `$100` ``.
+
+- No space immediately after the opening `$` or before the closing `$`.
+- Escape literal currency: `\$100`.
+- Do not use SVG, base64 images, or screenshots for equations.
+- **Only reproduce equations that appear in the source.** If a derivation is reconstructed, label it as your own and explain the assumptions; prefer omitting it.
+- Check that each `$$` block is closed. The QA reports an odd count.
 
 ---
 
-## 2. GitHub-Flavored Markdown (GFM) Callout Alerts
-
-Use standard GFM alerts to structure analytical insights:
+## 4. GFM Alerts
 
 ```markdown
-> [!NOTE] 研究背景与核心假说
-> 用于总结文献试图解决的科学核心问题与前提假说。
+> [!NOTE] 一句话结论
+> 核心结论及其成立条件。
 
-> [!IMPORTANT] 关键方法与实验参数
-> 用于标明实验组、对照组参数、关键约束条件或模拟物理边界。
+> [!IMPORTANT] 关键前提
+> 样品代表性、平衡态假设、边界条件、模型分辨率。
 
-> [!TIP] 图表精读指导
-> 用于指导读者如何观察复杂的相图、微结构切片或高维参数云图。
+> [!TIP] 读图要点
+> 坐标轴、色标、对照组、拐点、置信区间。
 
-> [!WARNING] 模型边界与未解不确定性
-> 用于客观指出作者模型的适用范围、样品局限性或未解物理机制。
+> [!WARNING] 边界与不确定性
+> 样品边界、方法边界、参数敏感性、外推风险。
 ```
 
----
-
-## 3. High-Resolution Figure Embedding
-
-- Always store figure files in a dedicated subfolder `./assets/<paper_slug>/`.
-- Embed images using standard relative markdown syntax:
-  ```markdown
-  ![图注简述](./assets/<paper_slug>/fig1.png)
-  *图 1：实验测试装置示意图与典型应变-应力响应曲线*
-  ```
-- Immediately follow the image with an italicized, comprehensive caption explaining axes, colors, and key inflection points.
+Use them sparingly. A note where every paragraph is an alert is harder to read than plain prose.
 
 ---
 
-## 4. Academic Tone & Neutrality (防夸大铁律)
+## 5. Evidence Anchors
 
-- **Forbidden Sentences**:
-  - ❌ "本研究彻底终结了关于 XX 的百年争论"
-  - ❌ "这一颠覆性发现颠覆了一切现存理论"
-  - ❌ "完美解决了该领域的核心瓶颈"
-- **Required Academic Neutrality**:
-  - ✅ "该发现为理解 XX 提供了新的动力学约束，但其在高温高压极端条件下的普适性仍需进一步复核。"
-  - ✅ "作者建立的模型在当前采样区域吻合良好，未来仍需扩大观测网络以验证区域非均质性的影响。"
+Every important claim should be traceable:
+
+- PDF source: `（第 7 页）`.
+- Web source: `（Results，第 3 段）` or `（Methods, "Sample preparation"）`.
+- Figure claim: reference the figure number and the manifest caption.
+- Missing evidence: `原文未提供` or `证据包中未包含该信息`.
+
+Do not cite a page number that is not present in `fulltext.md`. Browser-extracted text has no page numbers; use section/paragraph anchors instead.
+
+---
+
+## 6. Academic Tone
+
+Avoid:
+
+- `颠覆一切`
+- `彻底终结`
+- `空前重大突破`
+- `完美解决`
+- `前所未有`
+
+Prefer:
+
+- “该结果在作者设定的温压区间内支持 X，但向 Y 条件外推仍需验证。”
+- “作者认为 A 导致 B；现有证据是相关性与数值拟合，缺少独立实验对照。”
+- “样本量较小，区域代表性有限。”
+
+Separate three things explicitly:
+
+1. what the authors claim;
+2. what the data show;
+3. what you infer.
+
+---
+
+## 7. Note Structure
+
+Use `templates/paper_note.md`:
+
+1. one-sentence conclusion;
+2. literature positioning;
+3. scientific question and hypotheses;
+4. data and methods;
+5. figure-by-figure interpretation;
+6. mechanism and discussion;
+7. limitations and uncertainty;
+8. reusable takeaways;
+9. references.
+
+For multi-paper synthesis, use `templates/literature_review.md` instead.
+
+---
+
+## 8. Pre-Delivery Checklist
+
+```bash
+python3 main.py --check-note "papers/<slug>.md" --fix
+python3 main.py --index "papers/<slug>.md"
+python3 main.py --list
+```
+
+- [ ] Front matter complete.
+- [ ] Every image resolves to `../assets/<slug>/...`.
+- [ ] Figure captions match the manifest.
+- [ ] No template placeholders or sample equations.
+- [ ] Evidence anchors are present for key claims.
+- [ ] Limitations distinguish author-stated from reviewer-inferred.
+- [ ] `papers/INDEX.md` has exactly one row for the note.

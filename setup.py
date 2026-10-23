@@ -3,8 +3,8 @@ from setuptools import setup, find_packages
 
 setup(
     name="geo-academic-reader",
-    version="0.0.1-pre",
-    packages=find_packages(),
+    version="0.2.1",
+    packages=find_packages(include=["scripts", "scripts.*"]),
     py_modules=["doctor"],
     install_requires=[
         "requests>=2.28.0",
@@ -12,10 +12,15 @@ setup(
         "pypdf>=3.9.0",
         "websockets>=11.0",
     ],
+    extras_require={
+        "figures": ["pymupdf>=1.23"],
+        "dev": ["pytest>=7.0"],
+    },
     entry_points={
         "console_scripts": [
             "geo-reader=scripts.run_pipeline:main",
             "geo-doctor=doctor:main",
+            "geo-setup=scripts.onboarding:main",
         ],
     },
 )

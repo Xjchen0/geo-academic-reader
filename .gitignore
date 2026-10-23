@@ -5,6 +5,7 @@ __pycache__/
 
 # Caches and builds
 build/
+dist/
 *.egg-info/
 .pytest_cache/
 
@@ -14,7 +15,9 @@ venv/
 env/
 ENV/
 
-# Local pipeline output & assets
+# Local extraction artifacts (evidence packs are reproducible; notes and figures are kept)
+.raw/
+.geo-reader/
 output/
 test_output/
 
@@ -22,6 +25,5 @@ test_output/
 .DS_Store
 Thumbs.db
 
-# IDE specific files
-.vscode/
+# IDE specific files (workspace settings are intentionally tracked)
 .idea/

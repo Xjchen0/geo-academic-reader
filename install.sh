@@ -4,7 +4,7 @@ set -e
 
 echo "==================================================================="
 echo "  🌍 geo-academic-reader Installer (macOS / Linux)"
-echo "  Version: 0.0.1-pre (MIT License)"
+echo "  Version: 0.2.1 (MIT License)"
 echo "==================================================================="
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,4 +23,4 @@ fi
 echo "[*] Using Python: $($PYTHON_CMD --version)"
 
 # Run Python installer
-$PYTHON_CMD install.py
+$PYTHON_CMD install.py "$@"

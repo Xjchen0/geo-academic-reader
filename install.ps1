@@ -1,11 +1,11 @@
 # geo-academic-reader: Fast Windows PowerShell Installer
-# Version: 0.0.1-pre (MIT License)
+# Version: 0.2.1 (MIT License)
 
 $ErrorActionPreference = "Stop"
 
 Write-Host "===================================================================" -ForegroundColor Cyan
 Write-Host "  🌍 geo-academic-reader Installer (Windows)" -ForegroundColor Cyan
-Write-Host "  Version: 0.0.1-pre (MIT License)" -ForegroundColor Cyan
+Write-Host "  Version: 0.2.1 (MIT License)" -ForegroundColor Cyan
 Write-Host "===================================================================" -ForegroundColor Cyan
 
 # Force UTF-8 for console output
@@ -27,4 +27,4 @@ if (-not $pythonCmd) {
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
 
-& $pythonCmd.Source install.py
+& $pythonCmd.Source install.py $args

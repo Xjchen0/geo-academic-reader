@@ -1,0 +1,4 @@
+# Optional dependencies.
+# PyMuPDF is used only for PDF fallback figure cropping (caption-aware, 300 dpi).
+# It is not required when Chrome/browser extraction succeeds.
+pymupdf>=1.23
