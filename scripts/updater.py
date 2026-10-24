@@ -58,6 +58,7 @@ UPGRADE_PATHS = (
     "requirements.txt",
     "requirements-optional.txt",
     "geo-academic-reader.yaml",
+    "journals.json",
     "AGENTS.md",
     "SKILL.md",
     "PROMPTS.md",

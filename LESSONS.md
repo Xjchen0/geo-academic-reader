@@ -95,3 +95,12 @@ Observations from running this workspace on real papers. The theme is the same t
 - Refusing to update a dirty tree is the correct behaviour, not a bug. A silent `reset --hard` would "fix" the error by deleting the user's work.
 - Version checks must be cheap and offline-safe: a six-hour cache, a short timeout, exit code 0 on failure. An update check that fails a reading task trains users to disable it.
 - Patch-first versioning (`0.3.0 → 0.3.1`) keeps release numbering legible for a user who only wants to know whether their copy is current.
+
+## [tags: discovery, journals, workflow] “Find New Papers” Is a List, Not a Choice
+
+- The failure: asked to “找新文献”, the agent searched OpenAlex by topics inferred from existing notes and produced a curated reading list. It looked helpful and was the wrong contract. The user had asked for the journals' own new-article lists, and wanted to choose before any reading.
+- The fix is two-stage. `--new-literature` scans `journals.json` / `.geo-reader/journals.json` by ISSN, writes a numbered candidate list, and stops. Only after the user names numbers or DOIs does extraction start.
+- Topic inference is the bug, not a feature. Even a good guess removes the user's choice and hides which journals were actually covered.
+- Static keyword filters are allowed because the user configures them in advance. They must never be rewritten from the conversation.
+- An empty scan is reported as an empty scan. Do not “helpfully” replace it with a web topic search.
+- Crossref needs two date queries per journal: publication date catches Springer Nature and AGU, creation date catches Elsevier's future issue dates. One query alone silently loses half the list.

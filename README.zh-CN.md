@@ -1,6 +1,6 @@
 # geo-academic-reader
 
-[![Version](https://img.shields.io/badge/version-0.3.2-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
+[![Version](https://img.shields.io/badge/version-0.3.3-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-green.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
@@ -63,7 +63,7 @@ cd geo-academic-reader
 开始使用
 ```
 
-这就是全部的新手引导。Agent 会按 `AGENTS.md` 第 0 节问六个简短问题，把答案写入 `.geo-reader/profile.json`，并在后续会话中沿用。**没有设置命令，没有向导，对话之前不写入任何文件** —— 新克隆的仓库不带使用痕迹。之后想修改，说 `重新设置偏好` 即可。
+这就是全部的新手引导。Agent 会按 `AGENTS.md` 第 0 节问几个简短问题，把答案写入 `.geo-reader/profile.json`，并在后续会话中沿用。**没有设置命令，没有向导，对话之前不写入任何文件** —— 新克隆的仓库不带使用痕迹。之后想修改，说 `重新设置偏好` 即可。
 
 接着抽取第一篇论文：
 
@@ -94,12 +94,25 @@ Agent 会分一到两批询问：
 | 浏览器策略 | `auto`、`existing`、`off` | 是否启动 Chrome、复用 9222，或只用 HTTP/PDF |
 | 精读深度 | `brief`、`standard`、`deep` | 一页速览、标准 IMRaD、逐图精读 |
 | 引用格式 | `apa`、`nature`、`gbt7714` | 参考文献样式 |
+| 期刊清单 | 内置 30 本，或自定义 | “找新文献”扫描哪些期刊 |
 
-默认值为 `zh-CN`、VS Code、balanced、auto、deep、APA；直接说“用默认值”也可以。偏好保存在本地并被 git 忽略。Agent 每次任务前用 `python3 main.py --profile --json` 检查；只要文件存在，就不会重复引导。
+默认值为 `zh-CN`、VS Code、balanced、auto、deep、APA，期刊清单使用内置 `journals.json`；直接说“用默认值”也可以。偏好保存在本地并被 git 忽略。Agent 每次任务前用 `python3 main.py --profile --json` 检查；只要文件存在，就不会重复引导。
 
 ---
 
 ## 日常工作流
+
+### 0. 找新文献（先列清单，等待选择）
+
+```bash
+python3 main.py --new-literature --days 7
+python3 main.py --new-literature --days 14 --journal epsl --journal gca
+python3 main.py --journals-init   # 生成可编辑的个人期刊清单
+```
+
+扫描按 `journals.json`（个人副本 `.geo-reader/journals.json` 优先）里的 ISSN 进行，通过 Crossref 拉取每本期刊在窗口内新上线或新登记的条目，合并去重，并去掉更正、勘误、社论、撤稿和杂志社务信息。结果写到 `.geo-reader/journal-scan/latest.md`，同时在终端打印编号候选。
+
+这一步**只列清单**。脚本不会抽取证据包，Agent 也不应在你回复编号或 DOI 之前开始精读。想调整范围就编辑清单里的 `enabled`、`keywords` 和 `defaults.days`；关键词是静态配置，不会根据对话临时改变。
 
 ### 1. 抽取证据包
 
@@ -142,7 +155,7 @@ python3 main.py --list
 ### 4. 检查更新
 
 ```bash
-python3 main.py --check-update              # 例如 0.3.1 → 0.3.2，或“已是最新”
+python3 main.py --check-update              # 例如 0.3.2 → 0.3.3，或“已是最新”
 python3 main.py --update --dry-run          # 只预览目标版本
 python3 main.py --update                    # 更新，同时保留现有资料
 ```
@@ -220,6 +233,8 @@ python3 main.py --doi DOI               按 DOI 抽取证据包
 python3 main.py --url URL               按文章链接抽取
 python3 main.py --pdf PATH              从本地 PDF 抽取
 python3 main.py --batch-pdfs            处理 input_pdfs/ 下全部 PDF
+python3 main.py --new-literature        扫描期刊清单，只列候选（不抽取）
+python3 main.py --journals-init         生成 .geo-reader/journals.json
 python3 main.py --check-note [NOTE]     检查单篇或全部笔记
 python3 main.py --index NOTE            写入/更新 papers/INDEX.md
 python3 main.py --list                  列出证据包与笔记
@@ -242,6 +257,7 @@ geo-academic-reader/
 ├── AGENTS.md                     Agent 契约、引导流程、标准作业程序
 ├── PROMPTS.md                    可复制的任务提示词
 ├── SKILL.md                      Skill 清单与精简契约
+├── journals.json                 出厂期刊清单（ISSN、开关、关键词）
 ├── input_pdfs/                   原始 PDF 投放区
 ├── papers/
 │   ├── INDEX.md                  文献目录
@@ -252,7 +268,10 @@ geo-academic-reader/
 │   ├── fulltext.md
 │   ├── figures/manifest.json
 │   └── README.md
-├── .geo-reader/                  本地偏好与 Chrome 配置（被 git 忽略）
+├── .geo-reader/                  本地偏好、期刊清单与扫描结果（被 git 忽略）
+│   ├── profile.json
+│   ├── journals.json             个人期刊清单（优先于出厂清单）
+│   └── journal-scan/latest.md    最近一次编号候选清单
 ├── templates/                    笔记与综述模板
 ├── rules/                        Markdown、期刊、排错参考
 ├── scripts/                      抽取、质检、偏好定义、CLI

@@ -100,11 +100,20 @@ def print_guide(profile: Optional[dict] = None) -> None:
 
 0) 首次使用（对话式，不运行设置脚本）
    在这个工作区里对 Agent 说：开始使用
-   Agent 会先问语言、环境、指令风格、浏览器策略、精读深度和引用格式，
+   Agent 会先问语言、环境、指令风格、浏览器策略、精读深度、引用格式和期刊清单，
    然后写入 .geo-reader/profile.json。以后每次任务都会沿用这份偏好。
    想修改时说：重新设置偏好。
 
-1) 抽取证据包（脚本只产出证据，不写综述）
+1) 找新文献（只列清单，等待你选择）
+   python3 main.py --new-literature --days 7
+   python3 main.py --new-literature --days 14 --journal epsl --journal gca
+   python3 main.py --journals-init     # 生成可编辑的个人期刊清单
+
+   扫描 journals.json（个人副本 .geo-reader/journals.json 优先）里的期刊，
+   把候选写成 .geo-reader/journal-scan/latest.md，并打印编号列表。
+   这一步不会抽取证据包；Agent 必须等你回复编号或 DOI 后再精读。
+
+2) 抽取证据包（脚本只产出证据，不写综述）
    python3 main.py --doi "10.1038/s41467-026-69772-8"
    python3 main.py --url "https://www.nature.com/articles/..."
    python3 main.py --pdf "input_pdfs/paper.pdf"
@@ -115,19 +124,19 @@ def print_guide(profile: Optional[dict] = None) -> None:
      --browser existing   只复用已开的 9222 端口
      --browser off        不走浏览器，HTTP/PDF 回退
 
-2) 让 Agent 写笔记
+3) 让 Agent 写笔记
    “读取 .raw/<slug>/ 的证据包，按 templates/paper_note.md 写 papers/<slug>.md；
      图片用 assets/<slug>/；不要编造公式或结论；最后运行 --check-note 和 --index。”
 
    图库位于 papers/assets/<slug>/，与笔记同在 papers/ 下。
    这样无论 VS Code 打开项目根、papers/ 还是单个 .md，预览都能显示图片。
 
-3) 交付前检查
+4) 交付前检查
    python3 main.py --check-note papers/<slug>.md --fix
    python3 main.py --index papers/<slug>.md
    python3 main.py --list
 
-4) 环境自检
+5) 环境自检
    python3 main.py --doctor
 
 当前偏好{profile_note}：{summary}

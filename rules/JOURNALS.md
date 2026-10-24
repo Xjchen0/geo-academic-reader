@@ -6,6 +6,77 @@ The strategy is **browser-first, not selector-perfect**. The manifest is the sou
 
 ---
 
+## New-Article Watch: journal list, not topic search
+
+`python3 main.py --new-literature` answers “find new papers” **only from the configured journal list** (`journals.json`, or `.geo-reader/journals.json` when present). It never reads `papers/`, `.raw/`, or the conversation to choose a topic.
+
+The command is a listing step, not an extraction step:
+
+1. It writes `.geo-reader/journal-scan/latest.md` and `latest.json` with numbered candidates.
+2. The agent presents those candidates and stops.
+3. Only after the user names numbers or DOIs does the agent run `--doi` and write notes.
+
+### List schema
+
+```json
+{
+  "version": 1,
+  "defaults": { "days": 7, "limit": 80, "sort": "date" },
+  "keyword_sets": {
+    "earth_planetary": ["earth*", "mantle*", "mars", "volcan*"]
+  },
+  "journals": [
+    {
+      "key": "nature-geoscience",
+      "name": "Nature Geoscience",
+      "issn": "1752-0894",
+      "publisher": "Springer Nature",
+      "enabled": true,
+      "keyword_set": "earth_planetary",
+      "keywords": []
+    }
+  ]
+}
+```
+
+- `key` is the CLI identifier (`--journal nature-geoscience`), unique and lowercase.
+- `issn` is the Crossref journal ISSN; verify a new entry with `https://api.crossref.org/journals/<ISSN>`.
+- `enabled: false` keeps an entry documented but out of the scan.
+- `keyword_set` refers to a shared list; `keywords` appends inline terms. A trailing `*` marks a stem (`volcan*`); everything else is a whole word (`mars` does not match “marsh”).
+- Keywords match the **title only** and are static configuration. They exist to keep broad journals (Nature, Science, PNAS, Nature Communications, Science Advances, Nature Astronomy) usable; specialist journals normally leave them empty.
+
+### Crossref queries
+
+Two queries per journal, merged by DOI:
+
+| Query | Filter | Why |
+| :--- | :--- | :--- |
+| publication date | `from-pub-date` / `until-pub-date` | Catches Springer Nature and AGU records, whose `published` date tracks the online date |
+| creation date | `from-created-date` / `until-created-date` | Catches Elsevier records, whose issue date can be months ahead (a January issue deposited in October) |
+
+Both use `type:journal-article`. The scan paces requests globally (0.35 s), retries 429/5xx once, and runs at most three journals concurrently. A per-journal failure is reported in the output; it does not abort the rest.
+
+The displayed date is the online date when it is not in the future, otherwise the record creation date. That is why an Elsevier paper can show today's date even though its issue is dated next year.
+
+### What is filtered
+
+- Corrections, corrigenda, errata, editorials, publisher's notes, retractions, expressions of concern, issue front/back matter, obituaries, book reviews, briefings, podcasts, and news & views.
+- Nature Portfolio `10.1038/d...` DOIs (news, comment, careers); research and reviews use `10.1038/s...`.
+- Magazine organisation names such as “Mineralogical Society of America” and “Société Française de Minéralogie et de Cristallographie”.
+- Duplicate DOIs and duplicate normalised titles across journals.
+
+Everything else is kept and shown. A broad journal can still contribute an opinion piece that Crossref types as `journal-article`; the list is for human selection, so do not silently narrow it further.
+
+### Limits and blind spots
+
+- Crossref lag: a paper visible on the publisher page today may appear in Crossref a day or more later. Rerun the scan; do not switch to scraping a single TOC to “fill the gap” without telling the user.
+- `limit` is a global cap, but selection is round-robin across journals so a high-volume journal cannot hide the specialist ones. `total_found` reports the untruncated count.
+- The list is a candidate list, not a completeness claim. Say so when presenting it.
+
+Detailed extractor behaviour follows.
+
+---
+
 ## Publisher Strategy Matrix
 
 | Publisher / source | Text route | Figure route | Known caveats |

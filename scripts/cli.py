@@ -19,6 +19,14 @@ from .config import (
     profile_exists,
 )
 from .evidence import extract_evidence
+from .journal_watch import (
+    JournalConfigError,
+    ScanError,
+    init_user_config,
+    render_console,
+    scan as scan_journals,
+    write_scan,
+)
 from .note_check import check_notes, index_note, list_workspace
 from .onboarding import print_guide, print_profile, profile_summary
 from .updater import check_for_update, format_check, format_update, update_workspace
@@ -43,6 +51,8 @@ MENU = r"""
   [9] 查看快速上手与提示词
   [10] 环境自检 (doctor)
   [11] 检查更新 / 更新到最新版本
+  [12] 扫描期刊新文献（只列候选，不自动精读）
+  [13] 创建个人期刊清单 .geo-reader/journals.json
   [0] 退出
 """
 
@@ -117,6 +127,54 @@ def _run_batch(args) -> int:
     return 0 if failures == 0 else 1
 
 
+def _run_journal_scan(args, days=None, limit=None, sort=None) -> int:
+    """List new articles from the configured journals; never extract them."""
+    try:
+        payload = scan_journals(
+            days=days if days is not None else getattr(args, "days", None),
+            limit=limit if limit is not None else getattr(args, "limit", None),
+            sort=sort if sort is not None else getattr(args, "sort", None),
+            journal_keys=getattr(args, "journal", None),
+        )
+        paths = write_scan(payload)
+    except (JournalConfigError, ScanError) as exc:
+        print("❌ 期刊扫描失败: {}".format(exc))
+        return 1
+    except Exception as exc:
+        print("❌ 期刊扫描失败: {}".format(exc))
+        return 1
+
+    if args.json:
+        result = dict(payload)
+        result["files"] = {key: value for key, value in paths.items() if key != "markdown_text"}
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    print(render_console(payload))
+    print("\n清单已写入：")
+    print("  {}".format(paths["latest_markdown"]))
+    print("  {}".format(paths["markdown"]))
+    print("  {}".format(paths["json"]))
+    if payload["total"] == 0:
+        print("\n提示：窗口内没有候选。可加大 --days，或在 {} 中调整期刊清单。"
+              .format(payload["config"]))
+    return 0
+
+
+def _run_journals_init(args) -> int:
+    try:
+        result = init_user_config(force=getattr(args, "force", False))
+    except JournalConfigError as exc:
+        print("❌ {}".format(exc))
+        return 1
+    if getattr(args, "json", False):
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(result["message"])
+        print("路径：{}".format(result["path"]))
+    return 0
+
+
 def _print_lists(payload: dict) -> None:
     print("\nEvidence packs (.raw/):")
     if not payload["packs"]:
@@ -187,7 +245,7 @@ def interactive_menu() -> int:
     print("当前偏好：{}".format(_profile_summary(profile)))
     print(MENU)
     try:
-        choice = input("请选择 [0-10]: ").strip()
+        choice = input("请选择 [0-13]: ").strip()
     except (KeyboardInterrupt, EOFError):
         print("\n已退出。")
         return 0
@@ -233,6 +291,12 @@ def interactive_menu() -> int:
         if answer in ("y", "yes"):
             return _run_update(_default_args())
         return 0
+    if choice == "12":
+        raw = input("时间窗口（天，留空用 journals.json 默认）: ").strip()
+        days = int(raw) if raw.isdigit() and int(raw) > 0 else None
+        return _run_journal_scan(_default_args(), days=days)
+    if choice == "13":
+        return _run_journals_init(_default_args())
     if choice == "0":
         print("再见。")
         return 0
@@ -242,7 +306,8 @@ def interactive_menu() -> int:
 
 class _Args:
     def __init__(self, browser=None, wait=4.0, max_figures=30, json=False, quiet=False,
-                 prerelease=False, refresh=False, force=False, dry_run=False):
+                 prerelease=False, refresh=False, force=False, dry_run=False,
+                 days=None, limit=None, sort=None, journal=None):
         self.browser = browser
         self.wait = wait
         self.max_figures = max_figures
@@ -252,6 +317,10 @@ class _Args:
         self.refresh = refresh
         self.force = force
         self.dry_run = dry_run
+        self.days = days
+        self.limit = limit
+        self.sort = sort
+        self.journal = journal
 
 
 def _default_args() -> _Args:
@@ -281,6 +350,13 @@ def build_parser() -> argparse.ArgumentParser:
     group.add_argument("--guide", action="store_true", help="Print the quick-start guide")
     group.add_argument("--check-update", action="store_true", help="Check GitHub for a newer release (cached for 6 h)")
     group.add_argument("--update", action="store_true", help="Update the workspace, preserving profile, notes and evidence packs")
+    group.add_argument("--new-literature", action="store_true", help="Scan the configured journal list and print numbered candidates; never extracts")
+
+    parser.add_argument("--journals-init", action="store_true", help="Create .geo-reader/journals.json for editing")
+    parser.add_argument("--days", type=int, help="Journal scan window in days (default: journals.json)")
+    parser.add_argument("--limit", type=int, help="Maximum candidates to list (default: journals.json)")
+    parser.add_argument("--journal", action="append", metavar="KEY", help="Only scan this journal key (repeatable)")
+    parser.add_argument("--sort", choices=["journal", "date"], help="Group candidates by journal or list them by date")
 
     parser.add_argument("--browser", choices=["auto", "existing", "off"], help="Browser policy (default: profile)")
     parser.add_argument("--no-browser", dest="browser", action="store_const", const="off", help="Alias for --browser off")
@@ -356,6 +432,11 @@ def main(argv=None) -> int:
     if args.update:
         return _run_update(args)
 
+    if args.journals_init:
+        return _run_journals_init(args)
+    if args.new_literature:
+        return _run_journal_scan(args)
+
     if args.doi:
         code = _run_extraction("doi", args.doi, args)
         _notify_update_if_available(args)
@@ -385,7 +466,7 @@ def main(argv=None) -> int:
         if is_tty():
             return interactive_menu()
         parser.print_help()
-        print("\n非交互环境：请显式使用 --doi / --url / --pdf / --check-note 等参数。")
+        print("\n非交互环境：请显式使用 --doi / --url / --pdf / --new-literature / --check-note 等参数。")
         return 0
 
     parser.print_help()

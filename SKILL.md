@@ -1,6 +1,6 @@
 ---
 name: geo-academic-reader
-version: "0.3.2"
+version: "0.3.3"
 license: MIT
 description: >-
   Browser-first evidence extraction and VS Code-ready literature notes for scientific
@@ -13,7 +13,7 @@ compatibility: >-
   Optional: pymupdf for better PDF figure cropping.
 ---
 
-# geo-academic-reader (v0.3.2)
+# geo-academic-reader (v0.3.3)
 
 A workspace-level workflow, not a one-shot summarizer. The scripts extract evidence; the agent interprets it; a QA command verifies the note before delivery.
 
@@ -27,7 +27,7 @@ Open the workspace in an agent (VS Code, Cursor, Claude Code, Antigravity, Winds
 开始使用
 ```
 
-The agent follows `AGENTS.md` §0: it asks about language, editor, instruction style, browser policy, note depth, and citation format, then writes `.geo-reader/profile.json` and shows the three-step working loop. **There is no setup command and no wizard.** No `.geo-reader/` directory is created until that conversation happens, so a fresh clone carries no usage trace. Preferences persist across sessions; say `重新设置偏好` to change them.
+The agent follows `AGENTS.md` §0: it asks about language, editor, instruction style, browser policy, note depth, citation format, and the journal list for “find new papers”, then writes `.geo-reader/profile.json` and shows the working loop. **There is no setup command and no wizard.** No `.geo-reader/` directory is created until that conversation happens, so a fresh clone carries no usage trace. Preferences persist across sessions; say `重新设置偏好` to change them.
 
 Load the skill only after the profile exists. If the profile is missing, onboarding comes first, even when the first message already contains a DOI.
 
@@ -58,6 +58,20 @@ python3 main.py --update
 ```
 
 Installed entry points: `geo-reader`, `geo-doctor`.
+
+---
+
+## 🔎 New-Literature Watch (list first, P0)
+
+```bash
+python3 main.py --new-literature --days 7
+python3 main.py --new-literature --days 14 --journal epsl --journal gca
+python3 main.py --journals-init      # create and edit .geo-reader/journals.json
+```
+
+The scan reads `journals.json` (user copy `.geo-reader/journals.json` first), queries Crossref by ISSN for records published or deposited in the window, deduplicates, and drops corrections, errata, editorials, retractions and society front matter. It writes `.geo-reader/journal-scan/latest.md` with numbered candidates.
+
+**Stop after listing.** Present titles, journals, dates and DOIs; do not run `--doi`, create `.raw/`, or write a note until the user names numbers or DOIs. Never replace the scan with an OpenAlex or web topic search, and never infer the topic from existing notes or the conversation. If the scan is empty, report the window and journal errors and offer `--days` or a list edit.
 
 ---
 
@@ -208,6 +222,9 @@ Guarantees: `.geo-reader/profile.json` is backed up and restored if needed; `pap
 | `--update` refuses on a dirty tree | Local tracked code changes | Commit or `git stash`; never `reset --hard`. Notes and packs are untouched |
 | Profile missing after update | Rare partial restore | Restore `.geo-reader/backups/profile-<timestamp>.json`; `--update` also restores automatically |
 | Crossref 404 | New/preprint DOI | Use `--url`, or download the PDF and use `--pdf` |
+| `--new-literature` returns 0 | No records in the window, or all journals disabled | Increase `--days`; check `enabled` and ISSNs in `.geo-reader/journals.json` |
+| Crossref 429 during a scan | Shared rate limit | The scan paces requests and retries once; rerun later |
+| Journal list missing or invalid JSON | `journals.json` deleted/edited badly | `python3 main.py --journals-init --force` (overwrites the user copy) or restore the file |
 | PDF text empty | Scanned PDF, no text layer | OCR is not included; obtain a text PDF or use the publisher page |
 
 Detailed guide: [rules/TROUBLESHOOTING.md](rules/TROUBLESHOOTING.md). Publisher patterns: [rules/JOURNALS.md](rules/JOURNALS.md). Context strategy: [LESSONS.md](LESSONS.md). Copy-paste prompts: [PROMPTS.md](PROMPTS.md).

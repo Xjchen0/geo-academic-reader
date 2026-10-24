@@ -1,4 +1,4 @@
-# AGENTS.md — geo-academic-reader v0.3.2
+# AGENTS.md — geo-academic-reader v0.3.3
 
 > **Read this file before doing any literature task in this workspace.**
 > The workspace turns papers (DOI / URL / PDF) into a **raw evidence pack**, then the agent writes a **VS Code-ready literature note** from that evidence. The Python pipeline never writes review prose.
@@ -36,9 +36,11 @@ Use the agent's question UI when available (Qoder `AskUserQuestion`, Claude Code
 4. **Browser policy**: `auto` (reuse/launch Chrome, high-resolution figures first) / `existing` (only reuse CDP 9222) / `off` (HTTP/PDF fallback).
 5. **Note depth**: `brief` (1-page brief) / `standard` (IMRaD) / `deep` (per-figure reading).
 6. **Citation format**: `apa` / `nature` / `gbt7714`.
-7. Optional: **agent name** and a **contact email** for polite Crossref/OpenAlex requests. Both may be skipped.
+7. **Journal list** for “找新文献”: `default` (the shipped `journals.json`, 30 journals) / `custom` (the user will supply names or ISSNs later).
+   - For `custom`, do not guess: run `python3 main.py --journals-init`, ask the user to edit `.geo-reader/journals.json`, and scan on a later turn.
+8. Optional: **agent name** and a **contact email** for polite Crossref/OpenAlex requests. Both may be skipped.
 
-If the user says “use defaults”, take `zh-CN`, `vscode`, `balanced`, `auto`, `deep`, `apa`. Say which defaults were used.
+If the user says “use defaults”, take `zh-CN`, `vscode`, `balanced`, `auto`, `deep`, `apa` and the shipped journal list. Say which defaults were used.
 
 ### 0.3 Persist the answers
 
@@ -69,6 +71,7 @@ Write `.geo-reader/profile.json` yourself (create the directory). Use this schem
   3. `python3 main.py --check-note papers/<slug>.md --fix` then `--index` closes the loop.
   Mention that copy-paste prompts are in `PROMPTS.md` and that `重新设置偏好` changes the profile.
 - `.geo-reader/` is git-ignored and stays local.
+- The journal list is **not** stored in the profile: `journals.json` is the shipped default, and `.geo-reader/journals.json` is the user copy (preferred, preserved by updates). Never infer a journal list from the conversation; create the user copy with `--journals-init` and let the user edit it.
 
 ### 0.4 Reconfigure and persistence
 
@@ -183,6 +186,17 @@ Counting and verification rules:
 - Duplicate DOIs, entries without a DOI, a missing reference section and a missing 文献坐标 section are reported by `--check-note`.
 - Do not pad the list with papers you did not read. Three well-understood rivals are worth more than ten decorative citations; if the count is below target, say what is missing instead of inventing entries.
 
+### 1.6 “找新文献” = 扫描期刊清单，先列候选，等待选择（P0）
+
+当用户说“找新文献”“最近有什么新文章”“推荐文献”“看看期刊新文章”时：
+
+1. **只扫描配置好的期刊清单**。不要用 OpenAlex / WebSearch 按主题检索，不要从现有笔记、`INDEX.md` 或对话上下文推断用户“可能想看什么”。
+2. 运行 `python3 main.py --new-literature --days 7`。它读取 `journals.json`（个人副本 `.geo-reader/journals.json` 优先），按 ISSN 从 Crossref 拉取每本期刊的新条目，写入 `.geo-reader/journal-scan/latest.md` 与 `latest.json`。
+3. 把编号候选（标题、期刊、日期、DOI）呈现给用户，然后**停止**。本轮不要运行 `--doi`，不要创建 `.raw/<slug>/`，不要写 `papers/*.md`。
+4. 只有用户明确给出编号或 DOI 后，才逐篇执行 `--doi` 并进入精读流程。用户选了多篇时，一篇一篇建证据包；`papers/INDEX.md` 由父 Agent 串行更新。
+
+扫描为空或部分期刊报错时，报告日期窗口、扫描过的期刊和错误原因，并建议加大 `--days` 或编辑清单；**不得**改用主题搜索来“补”一个列表。用户明确要求“找某个主题的新文献”时，说明这是主题检索（不是期刊清单扫描），先确认口径再动手。关键词过滤只来自 `journals.json` 的静态配置，不能根据对话临时改写。
+
 ---
 
 ## 2. Directory contract
@@ -199,6 +213,10 @@ Counting and verification rules:
 | `papers/INDEX.md` | Note catalog, maintained by `--index`. |
 | `templates/paper_note.md` | Mandatory single-paper note template. |
 | `templates/literature_review.md` | Multi-paper review template. |
+| `journals.json` | Shipped journal watch list (ISSN, enabled flag, static keyword filter). |
+| `.geo-reader/journals.json` | User copy, preferred over the shipped list; created by `--journals-init`. |
+| `.geo-reader/journal-scan/latest.md` | Latest numbered candidate list; the agent reads this, then waits. |
+| `.geo-reader/journal-scan/scan-<date>.json` | Machine-readable result of the same scan. |
 | `PROMPTS.md` | Copy-paste prompts for users, including first-run triggers. |
 | `rules/` | Scraping, KaTeX, troubleshooting details. |
 
@@ -207,6 +225,16 @@ Counting and verification rules:
 ---
 
 ## 3. Standard operating procedure
+
+### Step 0 — “找新文献”：only list, then stop (P0)
+
+```bash
+python3 main.py --new-literature --days 7
+# Scan only a few journals: --journal epsl --journal gca
+# Create the editable user copy: python3 main.py --journals-init
+```
+
+Read `.geo-reader/journal-scan/latest.md`, present the numbered candidates to the user, and **end the turn**. Do not call `--doi`, do not create `.raw/`, and do not write a note until the user replies with numbers or DOIs. Details and edge cases: §1.6.
 
 ### Step 1 — Environment check
 
@@ -348,6 +376,8 @@ For a review covering multiple papers, use `templates/literature_review.md`; eve
 ## 7. Completion checklist
 
 - [ ] Profile exists (or onboarding completed in this conversation and saved).
+- [ ] “找新文献”只扫描了 `journals.json` / `.geo-reader/journals.json`，没有按对话主题自选文献。
+- [ ] 候选清单以编号呈现，并在用户选择前停止；未创建证据包或笔记。
 - [ ] `doctor.py` clean, or limitations stated.
 - [ ] Evidence pack exists: `paper.json`, `fulltext.md`, `figures/manifest.json`.
 - [ ] Figures preferred from browser; PDF fallback explicitly marked.
@@ -367,6 +397,10 @@ For a review covering multiple papers, use `templates/literature_review.md`; eve
 
 | Symptom | Action |
 | :--- | :--- |
+| “找新文献”没有先给清单 | 运行 `python3 main.py --new-literature --days 7`；不要改用主题搜索或从笔记推断 |
+| 扫描结果为 0 | 加大 `--days`；检查 `.geo-reader/journals.json` 的 `enabled` / ISSN；Elsevier 条目可能按 created 日期收录 |
+| 期刊清单缺失 / JSON 错误 | `python3 main.py --journals-init`；确需覆盖个人副本时用 `--force`，或恢复 `journals.json` |
+| 扫描出现 429 | 脚本已全局限速并重试；稍后重跑，不要用并发脚本加压 |
 | No profile | Onboard in conversation, then write `.geo-reader/profile.json`; never ask for `--setup` |
 | Chrome not running | `python3 main.py --doi ... --browser auto` (launches it) |
 | Cloudflare challenge | Complete the check in the opened Chrome window; retry with `--wait 8` |

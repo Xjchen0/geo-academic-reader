@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 geo-academic-reader: One-Click Cross-Platform Uninstaller & Environment Cleaner
-Version: 0.3.2 (MIT License)
+Version: 0.3.3 (MIT License)
 Safely removes installed packages, entry point binaries, build artifacts, and caches.
 """
 
@@ -17,7 +17,7 @@ def print_banner():
     print(r"""
 ===================================================================
     🧹 geo-academic-reader | Uninstaller & Environment Cleaner
-                 Version: 0.3.2 (MIT License)
+                 Version: 0.3.3 (MIT License)
 ===================================================================
     """)
 
