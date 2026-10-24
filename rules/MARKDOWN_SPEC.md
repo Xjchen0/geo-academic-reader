@@ -17,6 +17,8 @@ doi: "10.1038/s41467-026-69772-8"
 source: "https://www.nature.com/articles/s41467-026-69772-8"
 raw: "../.raw/10.1038_s41467-026-69772-8/paper.json"
 status: 已精读
+note_type: 经典文献
+note_depth: deep
 reviewed_at: "2026-10-24"
 tags: []
 ---
@@ -24,6 +26,7 @@ tags: []
 
 - `title`, `journal`, `year`, `doi`, `source` are used by `--index`.
 - Keep `raw` pointing at the evidence pack so a future reader can audit the note.
+- `note_depth` (`brief` / `standard` / `deep`) sets the external-reference target enforced by `--check-note`; `note_type: 经典文献综述` raises it to 15.
 - Use `status: 已精读` only after `--check-note` passes.
 - Paths are relative to `papers/`: `../.raw/...` for the evidence pack and `assets/...` for figures.
 
@@ -87,27 +90,58 @@ VS Code renders KaTeX natively. No extension is needed.
 
 ---
 
-## 4. GFM Alerts
+## 4. Callout blocks
+
+Do **not** use GitHub alert syntax (`> [!NOTE]`, `> [!WARNING]`, …). VS Code's built-in Markdown preview does not render it and shows the marker as literal text. Use a blockquote whose first line is a bold label:
 
 ```markdown
-> [!NOTE] 一句话结论
+> **一句话结论**
+>
 > 核心结论及其成立条件。
 
-> [!IMPORTANT] 关键前提
+> **关键前提**
+>
 > 样品代表性、平衡态假设、边界条件、模型分辨率。
 
-> [!TIP] 读图要点
+> **读图要点**
+>
 > 坐标轴、色标、对照组、拐点、置信区间。
 
-> [!WARNING] 边界与不确定性
+> **边界条件与未解问题**
+>
 > 样品边界、方法边界、参数敏感性、外推风险。
 ```
 
-Use them sparingly. A note where every paragraph is an alert is harder to read than plain prose.
+Use them sparingly. A note where every paragraph is a callout is harder to read than plain prose.
+
+Keep the label on its own quoted line and leave a quoted blank line before the body; otherwise the bold label and the paragraph collapse into one rendered line. `--check-note` treats any remaining `> [!NOTE]` marker as an error, and `--fix` rewrites it to `> **要点**` (or a matching label) for you to reword.
 
 ---
 
-## 5. Evidence Anchors
+## 5. Citation Network
+
+A classic-paper note is a position in a literature, not a summary of one PDF. Every note needs:
+
+1. a `## 0. 文献坐标` section (or 文献脉络 / 研究脉络 / 时间线 for reviews);
+2. a table with at least 5 data rows: `年份 | 工作 | 核心贡献 | 与本文的关系`;
+3. a **竞争解释** paragraph naming at least two rivals and the criterion each depends on;
+4. a **后续检验** paragraph describing what later work supported, limited or overturned;
+5. a `## 参考文献` section where every external work carries a DOI.
+
+Minimum external works, excluding the anchor:
+
+| `note_depth` | Target |
+| :--- | :--- |
+| `brief` | 3 |
+| `standard` | 6 |
+| `deep` | 10 |
+| `note_type: 经典文献综述` | 15 |
+
+Only entries under the reference heading are counted; inline mentions do not count, and the anchor paper is excluded. If you cannot reach the target, say which part of the literature is missing — never pad the list with papers you did not read. A reference you could not verify must be marked `自动构造，需核对`.
+
+---
+
+## 6. Evidence Anchors
 
 Every important claim should be traceable:
 
@@ -120,7 +154,7 @@ Do not cite a page number that is not present in `fulltext.md`. Browser-extracte
 
 ---
 
-## 6. Academic Tone
+## 7. Academic Tone
 
 Avoid:
 
@@ -144,25 +178,25 @@ Separate three things explicitly:
 
 ---
 
-## 7. Note Structure
+## 8. Note Structure
 
 Use `templates/paper_note.md`:
 
 1. one-sentence conclusion;
-2. literature positioning;
+2. 文献坐标 with the citation-network table, 竞争解释 and 后续检验;
 3. scientific question and hypotheses;
 4. data and methods;
 5. figure-by-figure interpretation;
 6. mechanism and discussion;
 7. limitations and uncertainty;
 8. reusable takeaways;
-9. references.
+9. references with DOIs.
 
 For multi-paper synthesis, use `templates/literature_review.md` instead.
 
 ---
 
-## 8. Pre-Delivery Checklist
+## 9. Pre-Delivery Checklist
 
 ```bash
 python3 main.py --check-note "papers/<slug>.md" --fix
@@ -170,10 +204,13 @@ python3 main.py --index "papers/<slug>.md"
 python3 main.py --list
 ```
 
-- [ ] Front matter complete.
+- [ ] Front matter complete, including `note_type` and `note_depth`.
 - [ ] Every image resolves to `assets/<slug>/...` and the file lives under `papers/assets/`.
 - [ ] Figure captions match the manifest.
 - [ ] No template placeholders or sample equations.
+- [ ] No GitHub alert syntax remains.
+- [ ] Citation table has ≥5 rows, with 竞争解释 and 后续检验.
+- [ ] External references meet the `note_depth` target and carry DOIs.
 - [ ] Evidence anchors are present for key claims.
 - [ ] Limitations distinguish author-stated from reviewer-inferred.
 - [ ] `papers/INDEX.md` has exactly one row for the note.

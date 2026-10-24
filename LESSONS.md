@@ -56,11 +56,30 @@ Observations from running this workspace on real papers. The theme is the same t
 - Keep display math balanced; an odd number of `$$` breaks the rest of the preview.
 - Use `\$` for literal currency.
 
+## [tags: markdown, vscode, callouts] Callouts
+
+- VS Code's built-in Markdown preview does not render GitHub alert syntax (`> [!NOTE]`, `> [!WARNING]`); it prints the marker as plain text. Use a blockquote with a bold label instead:
+  ```markdown
+  > **一句话结论**
+  >
+  > The claim and its boundary conditions.
+  ```
+- Keep the label on its own quoted line and leave a quoted blank line before the body, otherwise the bold label and the paragraph collapse into one line.
+- `--check-note` now treats the marker as an error and `--fix` rewrites it to `> **要点**`. The label is a guess; reword it to the real function rather than shipping "要点" everywhere.
+
+## [tags: references, citation-network, classic-papers] A Classic Paper Is a Position, Not a PDF
+
+- The first version of the note template only asked for "文献定位" in three bullets. The result was a competent summary that never said who the paper was arguing with. That is a book report, not a classic-paper read.
+- What changed the quality was forcing three things: a citation table with 年份 / 工作 / 核心贡献 / 与本文的关系; an explicit **竞争解释** paragraph; and an explicit **后续检验** paragraph.
+- Counts are a floor, not a goal. 10 external works for a deep read, 6 for standard, 3 for brief, 15 for a review. Only entries under `## 参考文献` count; the anchor is excluded.
+- The failure mode the count creates is padding: adding plausible titles that were never read. The check cannot detect that, so the template says it out loud — if the literature is missing, say which part, do not fill the gap.
+- Give every external work a DOI. A citation you cannot resolve is a liability in a note that is supposed to be reusable years later.
+
 ## [tags: tone, objectivity] Academic Neutrality
 
 - Ban `颠覆一切`, `彻底终结`, `完美解决`, `前所未有`, and similar phrasing.
 - Distinguish the authors' claims, the data, and your inference. A note that merges all three is not useful for later citation.
-- Put boundary conditions and sample limitations in a `> [!WARNING]` block, not in a closing flourish.
+- Put boundary conditions and sample limitations in a `> **边界条件与未解问题**` blockquote, not in a closing flourish.
 
 ## [tags: subagent, delegation, batch] Subagent Delegation
 

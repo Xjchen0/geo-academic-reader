@@ -1,6 +1,6 @@
 ---
 name: geo-academic-reader
-version: "0.2.2"
+version: "0.3.0-pre.1"
 license: MIT
 description: >-
   Browser-first evidence extraction and VS Code-ready literature notes for scientific
@@ -13,7 +13,7 @@ compatibility: >-
   Optional: pymupdf for better PDF figure cropping.
 ---
 
-# geo-academic-reader (v0.2.2)
+# geo-academic-reader (v0.3.0-pre.1)
 
 A workspace-level workflow, not a one-shot summarizer. The scripts extract evidence; the agent interprets it; a QA command verifies the note before delivery.
 
@@ -111,11 +111,11 @@ Manifest fields that matter most: `caption`, `origin`, `source_url`, `page`, `wi
    - Never use `../assets/...`, `./assets/...`, absolute paths, `file://`, or remote publisher URLs as the primary image.
    - Caption text comes from `figures/manifest.json`; if empty, say so.
 
-3. **GFM alerts**
-   - `> [!NOTE]` — core question and one-sentence conclusion.
-   - `> [!IMPORTANT]` — parameters, assumptions, boundary conditions.
-   - `> [!TIP]` — how to read a figure.
-   - `> [!WARNING]` — limitations, sample boundaries, uncertainties.
+3. **Labelled blockquotes** (not GitHub alerts)
+   - `> **一句话结论**` — core question and one-sentence conclusion.
+   - `> **关键前提**` — parameters, assumptions, boundary conditions.
+   - `> **读图要点**` — how to read a figure.
+   - `> **边界条件与未解问题**` — limitations, sample boundaries, uncertainties.
 
 4. **Academic neutrality**
    - Ban: `颠覆一切`, `彻底终结`, `空前重大突破`, `完美解决`, `前所未有`.
@@ -128,6 +128,27 @@ Manifest fields that matter most: `caption`, `origin`, `source_url`, `page`, `wi
 
 ---
 
+## 🕸 Classic-Paper Citation Network (P0)
+
+A classic-paper note is a position in a literature, not a summary of one PDF. The note must contain a `## 0. 文献坐标` section with:
+
+- a citation table of at least 5 rows: `年份 | 工作 | 核心贡献 | 与本文的关系`;
+- one paragraph on **竞争解释** (at least two rivals and the criterion each depends on);
+- one paragraph on **后续检验** (what later work supported, limited or overturned).
+
+Minimum external works, excluding the anchor:
+
+| `note_depth` | Target |
+| :--- | :--- |
+| `brief` | 3 |
+| `standard` | 6 |
+| `deep` | 10 |
+| `note_type: 经典文献综述` | 15 |
+
+Every external work needs a DOI. Never pad the list with unread papers; if the target cannot be met, say what is missing.
+
+---
+
 ## 🛠 Quality Gate
 
 ```bash
@@ -136,9 +157,9 @@ python3 main.py --check-note --fix          # all papers/*.md
 python3 main.py --check-note --strict       # warnings become errors
 ```
 
-Checks: missing images, zero-byte files, invalid image magic bytes, files outside `papers/assets/`, legacy root-level assets, non-standard relative paths, leftover template markers, hyperbole, odd number of `$$`.
+Checks: missing images, zero-byte files, invalid image magic bytes, files outside `papers/assets/`, legacy root-level assets, non-standard relative paths, leftover template markers, hyperbole, odd number of `$$`, GitHub alert syntax, missing 文献坐标 / 参考文献 sections, too few external works, missing citation table, references without DOI, duplicate DOIs.
 
-`--fix` rewrites a path only when the intended target is unambiguous, and migrates figures from a legacy root `assets/` folder into `papers/assets/`, updating the note, manifest, and `paper.json`. Do not delete a figure merely to make the report clean; report it.
+`--fix` rewrites a path only when the intended target is unambiguous, migrates figures from a legacy root `assets/` folder into `papers/assets/` (updating the note, manifest, and `paper.json`), and converts `> [!NOTE]`-style markers into labelled blockquotes. It does not invent citations. Do not delete a figure merely to make the report clean; report it.
 
 Before delivery, also run:
 
@@ -161,6 +182,8 @@ This updates the 7-column row in `papers/INDEX.md`.
 | Zero figures | JS viewer, paywall, or selector mismatch | Read manifest warnings; retry with `--browser auto`; check the page manually |
 | Text < 800 chars | Abstract page or paywall | Inspect `fulltext.md`; use OA PDF or `--url`; do not write a full review from an abstract |
 | Image missing in preview | Wrong relative path or legacy layout | `--check-note --fix`; expected `assets/<slug>/...` under `papers/` |
+| `github_alert_syntax` | VS Code does not render `> [!NOTE]` | `--check-note --fix`, then reword the generated label |
+| `thin_reference_context` | The note summarises one paper only | Add prehistory, rival explanations and later tests, or set a lower `note_depth` |
 | Crossref 404 | New/preprint DOI | Use `--url`, or download the PDF and use `--pdf` |
 | PDF text empty | Scanned PDF, no text layer | OCR is not included; obtain a text PDF or use the publisher page |
 

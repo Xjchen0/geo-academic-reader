@@ -1,3 +1,3 @@
 """Single source of truth for the workspace version."""
 
-__version__ = "0.2.2"
+__version__ = "0.3.0-pre.1"

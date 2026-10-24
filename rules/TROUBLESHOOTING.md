@@ -88,6 +88,23 @@ This is almost always a path or workspace-root problem. A useful symptom to reco
 
 ---
 
+## Callouts and citation-network errors
+
+| Error code | Cause | Fix |
+| :--- | :--- | :--- |
+| `github_alert_syntax` | The note still uses `> [!NOTE]` / `> [!WARNING]`; VS Code prints it as plain text | `--check-note --fix`, then reword the generated `> **要点**` label to the real function |
+| `missing_related_context` | No 文献坐标 / 文献脉络 / 时间线 section | Add `## 0. 文献坐标` with the citation table and the two analysis paragraphs |
+| `missing_reference_section` | No `## 参考文献` section | Add it; the anchor alone is not enough |
+| `no_external_references` | The reference list is empty or contains only the anchor | Add the prehistory and the rival explanations |
+| `thin_reference_context` | External works below the `note_depth` target (3 / 6 / 10, review 15) | Add the genuinely missing literature, or set `note_depth` to the depth the user actually asked for |
+| `missing_citation_table` | No table with 4+ data rows | Add `年份 | 工作 | 核心贡献 | 与本文的关系` |
+| `references_without_doi` | Entries with no resolvable DOI | Resolve the DOI, or mark the entry `自动构造，需核对` |
+| `duplicate_reference_doi` | The same work listed twice | Merge the entries |
+
+The check counts only list items under the reference heading and excludes the anchor paper. It cannot tell whether you actually read a cited paper; padding the list is the one failure it cannot catch, so do not do it.
+
+---
+
 ## Metadata and citations
 
 | Symptom | Likely cause | What to do |

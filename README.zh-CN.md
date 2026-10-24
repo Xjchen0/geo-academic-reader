@@ -1,6 +1,6 @@
 # geo-academic-reader
 
-[![Version](https://img.shields.io/badge/version-0.2.2-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
+[![Version](https://img.shields.io/badge/version-0.3.0--pre.1-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-green.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
@@ -21,7 +21,7 @@
 | :--- | :--- | :--- |
 | 脚本 | 抓取、渲染、下载、记录来源 | `.raw/<slug>/`、`papers/assets/<slug>/` |
 | Agent | 解读证据、撰写笔记 | `papers/<slug>.md` |
-| 质检 | 校验路径、图片、措辞、公式与模板残留 | `--check-note`、`--index` |
+| 质检 | 校验路径、图片、提示块、引用网络、措辞、公式与模板残留 | `--check-note`、`--index` |
 
 脚本从不撰写综述文字。这是有意为之：能自动填满每一节的生成器，会让浅层笔记看起来像精读。
 
@@ -127,7 +127,7 @@ python3 main.py --batch-pdfs
 
 把证据包路径和 `templates/paper_note.md` 交给 Agent。一条典型指令：
 
-> 读取 `.raw/<slug>/`，按 `templates/paper_note.md` 写 `papers/<slug>.md`。只使用抽取到的正文和 manifest 图注；不要编造公式或结论。图片链接写 `assets/<slug>/fig_XX.png`。关键结论标注页码或章节。最后运行 `--check-note --fix` 和 `--index`。
+> 读取 `.raw/<slug>/`，按 `templates/paper_note.md` 写 `papers/<slug>.md`。只使用抽取到的正文和 manifest 图注；不要编造公式或结论。图片链接写 `assets/<slug>/fig_XX.png`。关键结论标注页码或章节。把论文放回引用网络：前史、竞争解释、后续检验，每条外部文献给出 DOI。最后运行 `--check-note --fix` 和 `--index`。
 
 ### 3. 质检
 
@@ -137,11 +137,26 @@ python3 main.py --index "papers/<slug>.md"
 python3 main.py --list
 ```
 
-`--check-note` 会检查图片是否存在、是否为零字节、magic bytes 是否为图片、是否符合规范图库布局，同时检查模板残留、夸大措辞和未闭合的 `$$`。`--fix` 只在目标唯一时改写路径，并迁移旧版图库。加 `--strict` 可把警告视为错误。
+`--check-note` 会检查图片是否存在、是否为零字节、magic bytes 是否为图片、是否符合规范图库布局，同时检查模板残留、夸大措辞、未闭合的 `$$` 和引用网络：是否有文献坐标章节、引用表是否 ≥5 行、参考文献是否带 DOI、外部文献数量是否达到 `note_depth` 要求（3 / 6 / 10，综述 15）。GitHub 告警语法会被判为错误，因为 VS Code 只会把它当普通文字显示。`--fix` 会改写路径、迁移旧版图库，并把告警标记改成带粗体标签的引用块。加 `--strict` 可把警告视为错误。
 
 ### 4. 预览
 
-打开 `papers/<slug>.md`，按 `Cmd+Shift+V`（macOS）或 `Ctrl+Shift+V`。原生 KaTeX 与 GFM 提示块开箱可用，无需插件。
+打开 `papers/<slug>.md`，按 `Cmd+Shift+V`（macOS）或 `Ctrl+Shift+V`。原生 KaTeX 开箱可用，无需插件。提示块使用纯 Markdown 引用块加粗标签（`> **一句话结论**`），因为 VS Code 内置预览不渲染 GitHub 告警语法。
+
+---
+
+## 经典文献要放进引用网络
+
+只复述一篇 PDF 的“经典文献精读”不是精读，是读书报告。每篇笔记都要有 `## 0. 文献坐标`：一张 `年份 | 工作 | 核心贡献 | 与本文的关系` 表、一段明确的**竞争解释**、一段**后续检验**。`--check-note` 的要求是：
+
+| `note_depth` | 外部文献下限 | 典型用途 |
+| :--- | :--- | :--- |
+| `brief` | 3 | 一页速览 |
+| `standard` | 6 | 默认单篇笔记 |
+| `deep` | 10 | 经典文献深读 |
+| `note_type: 经典文献综述` | 15 | 多篇综述 |
+
+锚定论文本身不计入外部文献。只有 `## 参考文献` 下的条目才计数，每条外部文献尽量给出 DOI。文献读不全就写清楚缺哪一块，不要为了凑数塞入没读过的条目 —— 这条检查存在的意义正是防止这种“装饰性引用”。
 
 ---
 

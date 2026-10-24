@@ -38,6 +38,35 @@ PLACEHOLDER_MARKERS = (
 
 FORBIDDEN_WORDS = ("颠覆一切", "彻底终结", "空前重大突破", "完美解决", "前所未有")
 
+# VS Code's built-in Markdown preview does not understand GitHub alert
+# syntax; it prints "> [!NOTE]" as literal text. Catch it before delivery.
+ALERT_RE = re.compile(
+    r"^(?P<indent>[ \t]*)>[ \t]*\[!(?P<kind>NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*(?P<rest>.*)$",
+    re.I | re.M,
+)
+ALERT_LABELS = {
+    "note": "要点",
+    "tip": "读图要点",
+    "important": "关键前提",
+    "warning": "注意事项",
+    "caution": "注意事项",
+}
+
+# A classic-paper note must talk to a network of papers, not just summarise
+# one PDF. Targets scale with the note depth declared in the front matter.
+REFERENCE_TARGETS = {"brief": 3, "standard": 6, "deep": 10}
+REVIEW_TARGET = 15
+REFERENCE_HEADING_RE = re.compile(r"^(#{1,3})[ \t]*.*?(?:参考文献|references?)[ \t]*$", re.I | re.M)
+RELATED_HEADING_RE = re.compile(
+    r"^(#{1,4})[ \t]*.*?(?:文献坐标|文献定位|文献脉络|研究脉络|引用脉络|学术史|时间线|timeline|related\s+works?|literature\s+context).*$",
+    re.I | re.M,
+)
+BIB_ENTRY_RE = re.compile(r"^[ \t]*(?:\d+[.)]|[-*+])[ \t]+(?P<body>\S.*)$", re.M)
+DOI_RE = re.compile(r"10\.\d{4,9}/[^\s\]\)<>\"',;]+", re.I)
+AUTO_CITATION_MARKER = "自动构造"
+TABLE_ROW_RE = re.compile(r"^[ \t]*\|.*\|[ \t]*$", re.M)
+TABLE_SEPARATOR_RE = re.compile(r"^[ \t]*\|?[ \t]*:?-{3,}:?[ \t]*(\|[ \t]*:?-{3,}:?[ \t]*)+\|?[ \t]*$")
+
 
 def _line_of(text: str, index: int) -> int:
     return text.count("\n", 0, index) + 1
@@ -94,6 +123,98 @@ def parse_front_matter(text: str) -> Dict[str, str]:
         key, value = line.split(":", 1)
         data[key.strip()] = value.strip().strip('"').strip("'")
     return data
+
+
+def _section_body(text: str, heading: "re.Match") -> str:
+    """Return the body of a heading, stopping at the next heading of the same or higher level."""
+    level = len(heading.group(1))
+    rest = text[heading.end():]
+    stop = re.search(r"^#{1,%d}[ \t]" % level, rest, re.M)
+    return rest[: stop.start()] if stop else rest
+
+
+def _max_table_rows(text: str) -> int:
+    """Largest number of data rows in any Markdown table in ``text``."""
+    best = 0
+    block: List[str] = []
+
+    def flush() -> None:
+        nonlocal best
+        rows = [
+            line
+            for line in block
+            if line.strip()
+            and not TABLE_SEPARATOR_RE.match(line)
+            and not re.match(r"^[ \t]*\|[ \t]*:?-{1,}:?", line)
+        ]
+        # The first row of a Markdown table is the header.
+        best = max(best, max(0, len(rows) - 1))
+        block.clear()
+
+    for line in text.splitlines():
+        if TABLE_ROW_RE.match(line):
+            block.append(line)
+        else:
+            if block:
+                flush()
+    if block:
+        flush()
+    return best
+
+
+def _normalise_doi(value: str) -> str:
+    doi = value.strip().lower()
+    doi = re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:)", "", doi)
+    return doi.rstrip(".,;:)]>").strip()
+
+
+def analyse_citations(text: str, front: Dict[str, str]) -> Dict[str, object]:
+    """Count external works cited by a note and check its citation network."""
+    depth = (front.get("note_depth") or front.get("depth") or "standard").lower()
+    if depth not in REFERENCE_TARGETS:
+        depth = "standard"
+    note_type = "{} {}".format(front.get("note_type", ""), front.get("type", "")).lower()
+    target = REFERENCE_TARGETS[depth]
+    if "综述" in note_type or "review" in note_type:
+        target = max(target, REVIEW_TARGET)
+
+    reference_heading = REFERENCE_HEADING_RE.search(text)
+    related_heading = RELATED_HEADING_RE.search(text)
+
+    entries = 0
+    dois = set()
+    doi_list: List[str] = []
+    without_doi = 0
+    if reference_heading:
+        body = _section_body(text, reference_heading)
+        for match in BIB_ENTRY_RE.finditer(body):
+            entry = match.group("body").strip()
+            if not entry or entry.startswith("|"):
+                continue
+            entries += 1
+            found = {_normalise_doi(value) for value in DOI_RE.findall(entry)}
+            dois |= found
+            doi_list.extend(sorted(found))
+            if not found and AUTO_CITATION_MARKER not in entry:
+                without_doi += 1
+
+    anchor = _normalise_doi(front.get("doi", "")) if front.get("doi") else ""
+    anchor_listed = bool(anchor and anchor in dois)
+    external = max(0, entries - (1 if anchor_listed else 0))
+    external_dois = len(dois - ({anchor} if anchor else set()))
+
+    return {
+        "depth": depth,
+        "target": target,
+        "entries": entries,
+        "external": external,
+        "external_dois": external_dois,
+        "without_doi": without_doi,
+        "duplicate_dois": len({value for value in doi_list if doi_list.count(value) > 1}),
+        "has_reference_section": reference_heading is not None,
+        "has_related_section": related_heading is not None,
+        "max_table_rows": _max_table_rows(text),
+    }
 
 
 def infer_note_metadata(note_path: Path) -> Dict[str, str]:
@@ -274,6 +395,99 @@ def validate_note(note_path: Path, strict: bool = False) -> Dict[str, object]:
                 }
             )
 
+    for match in ALERT_RE.finditer(text):
+        kind = match.group("kind").upper()
+        issues.append(
+            {
+                "severity": "error",
+                "code": "github_alert_syntax",
+                "line": _line_of(text, match.start()),
+                "message": (
+                    "GitHub alert 语法 > [!{}] 在 VS Code 内置预览中会原样显示为文字；"
+                    "改用 > **{}** 加引用块的写法（--fix 可自动改写，标签措辞需人工核对）"
+                ).format(kind, ALERT_LABELS.get(kind.lower(), "要点")),
+            }
+        )
+
+    citations = analyse_citations(text, parse_front_matter(text))
+    if not citations["has_related_section"]:
+        issues.append(
+            {
+                "severity": "error",
+                "code": "missing_related_context",
+                "line": 0,
+                "message": (
+                    "缺少“文献坐标/文献脉络”章节：经典文献精读必须交代本文与哪些工作对话，"
+                    "不能只总结单篇论文。"
+                ),
+            }
+        )
+    if not citations["has_reference_section"]:
+        issues.append(
+            {
+                "severity": "error",
+                "code": "missing_reference_section",
+                "line": 0,
+                "message": "缺少“参考文献 / References”章节；每条外部文献应给出可核验 DOI。",
+            }
+        )
+    elif citations["external"] == 0:
+        issues.append(
+            {
+                "severity": "error",
+                "code": "no_external_references",
+                "line": 0,
+                "message": (
+                    "参考文献只有本文自身或为空：经典文献精读至少应引用 {} 篇外部文献。"
+                ).format(citations["target"]),
+            }
+        )
+    elif citations["external"] < citations["target"]:
+        issues.append(
+            {
+                "severity": "warning",
+                "code": "thin_reference_context",
+                "line": 0,
+                "message": (
+                    "外部文献 {} 篇，低于 {} 深度建议的 {} 篇；补充前史、竞争假说与后续检验。"
+                ).format(citations["external"], citations["depth"], citations["target"]),
+            }
+        )
+    if citations["max_table_rows"] < 5:
+        issues.append(
+            {
+                "severity": "warning",
+                "code": "missing_citation_table",
+                "line": 0,
+                "message": (
+                    "未找到至少 5 行的引用脉络表；用“年份 | 工作 | 核心贡献 | 与本文关系”表格"
+                    "把前史、竞争解释与后续检验排开。"
+                ),
+            }
+        )
+    if citations["without_doi"]:
+        issues.append(
+            {
+                "severity": "warning",
+                "code": "references_without_doi",
+                "line": 0,
+                "message": (
+                    "{} 条参考文献没有 DOI；请补 DOI，无法核验的条目标注“自动构造，需核对”。"
+                ).format(citations["without_doi"]),
+            }
+        )
+    if citations["duplicate_dois"]:
+        issues.append(
+            {
+                "severity": "warning",
+                "code": "duplicate_reference_doi",
+                "line": 0,
+                "message": "参考文献中有 {} 个重复 DOI，请合并同一条目。".format(
+                    citations["duplicate_dois"]
+                ),
+            }
+        )
+
     # Display math should be balanced.
     if text.count("$$") % 2 != 0:
         issues.append(
@@ -297,6 +511,7 @@ def validate_note(note_path: Path, strict: bool = False) -> Dict[str, object]:
         "issues": issues,
         "errors": sum(1 for issue in issues if issue["severity"] == "error"),
         "warnings": sum(1 for issue in issues if issue["severity"] == "warning"),
+        "citations": citations,
     }
 
 
@@ -315,6 +530,22 @@ def _replace_image_ref(text: str, old: str, new: str) -> str:
             count += text.count(pattern)
             text = text.replace(pattern, "src={q}{new}{q}".format(q=quote, new=new))
     return text
+
+
+def _fix_alerts(text: str) -> Tuple[str, int]:
+    """Rewrite GitHub alert markers as labelled blockquotes VS Code can render."""
+
+    def replace(match: "re.Match") -> str:
+        label = ALERT_LABELS.get(match.group("kind").lower(), "要点")
+        rest = match.group("rest").strip()
+        # Keep a quoted blank line after the label, otherwise the bold label
+        # and the following paragraph collapse onto one rendered line.
+        lines = ["> **{}**".format(label), ">"]
+        if rest:
+            lines.append("> " + rest)
+        return "\n".join(lines)
+
+    return ALERT_RE.subn(replace, text)
 
 
 def _copy_asset(source: Path, target: Path) -> bool:
@@ -456,6 +687,10 @@ def fix_note(note_path: Path, dry_run: bool = False) -> Dict[str, object]:
             changed = True
             fixed.append({"from": ref, "to": replacement, "line": issue["line"]})
 
+    text, fixed_alerts = _fix_alerts(text)
+    if fixed_alerts:
+        changed = True
+
     if changed and not dry_run:
         note_path.write_text(text, encoding="utf-8")
 
@@ -476,6 +711,7 @@ def fix_note(note_path: Path, dry_run: bool = False) -> Dict[str, object]:
         "note": str(note_path),
         "changed": changed,
         "fixed": fixed,
+        "fixed_alerts": fixed_alerts,
         "migrated": migrated,
         "dry_run": dry_run,
         "report": validate_note(note_path) if (changed or migrated) and not dry_run else report,
@@ -488,6 +724,15 @@ def print_report(report: dict) -> None:
     print("   图片: {} | 错误: {} | 警告: {}".format(
         report.get("images", 0), report.get("errors", 0), report.get("warnings", 0)
     ))
+    citations = report.get("citations") or {}
+    if citations:
+        print("   文献: {} 篇外部文献（目标 ≥{}，深度 {}）| 引用表 {} 行 | DOI {} 个".format(
+            citations.get("external", 0),
+            citations.get("target", 0),
+            citations.get("depth", "standard"),
+            citations.get("max_table_rows", 0),
+            citations.get("external_dois", 0),
+        ))
     issues = report.get("issues", [])
     if not issues:
         print("   ✓ 未发现问题")
@@ -517,6 +762,10 @@ def check_notes(paths: Optional[Iterable[Path]] = None, fix: bool = False, stric
             print_report(report)
             if result["fixed"]:
                 print("   → 已修复 {} 处路径".format(len(result["fixed"])))
+            if result.get("fixed_alerts"):
+                print("   → 已改写 {} 处 GitHub alert 标记，请核对标签措辞".format(
+                    result["fixed_alerts"]
+                ))
             if result.get("migrated"):
                 print("   → 已迁移 {} 张图片到 papers/assets/".format(len(result["migrated"])))
         else:

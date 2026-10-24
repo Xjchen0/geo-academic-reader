@@ -39,7 +39,25 @@
 3. 按 templates/paper_note.md 写 papers/<slug>.md。
 4. 图片只用 assets/<slug>/fig_XX.png，图注必须来自 manifest。
 5. 不要编造公式、数据、结论；证据不足写“原文未提供”。
-6. 最后运行 --check-note --fix 和 --index，并把 warnings 原样告诉我。
+6. 把本文放进引用网络：写“文献坐标”表，至少 10 篇外部文献（每个都有 DOI），并单列竞争解释与后续检验。
+7. 最后运行 --check-note --fix 和 --index，并把 warnings 原样告诉我。
+```
+
+---
+
+## 1b. 经典文献深读（必须多篇对话）
+
+```text
+把 <DOI / URL / PDF> 当作一篇经典文献来读，不要只写单篇摘要。
+
+要求：
+1. 仍然是先抽证据包、再写笔记；锚定论文的每个结论都要有证据锚点。
+2. 找到它的前史（它在回应谁）、同期竞争解释（至少两种）、以及发表后的检验或修正。
+3. 在“文献坐标”里给出至少 5 行的引用表：年份 | 工作 | 核心贡献 | 与本文的关系。
+4. 外部文献不少于 10 篇，每篇给 DOI；无法核验的条目标注“自动构造，需核对”。
+5. 明确写出：本文的证据足以排除哪些竞争解释、不足以排除哪些。不要把“没有讨论”写成“已经排除”。
+6. 如果某一段文献你查不到，直接说“这部分检索未覆盖”，不要用没读过的条目凑数。
+7. 完成后运行 --check-note --fix；如果报 thin_reference_context，补齐文献而不是降低 note_depth。
 ```
 
 ---
@@ -110,7 +128,7 @@
 
 ```text
 运行 python3 main.py --check-note --fix，汇总所有 error 和 warning。
-按“路径错误 / 文件缺失 / 文件损坏 / 模板残留 / 夸大措辞”分类，先修最影响阅读的。
+按“路径错误 / 文件缺失 / 文件损坏 / 模板残留 / 夸大措辞 / GitHub 告警语法 / 引用网络不足”分类，先修最影响阅读的。
 ```
 
 ---
@@ -151,6 +169,9 @@
 - 每个关键结论后标注证据锚点：PDF 用（第 N 页），网页用（原文第 N 段/节）。
 - 图片路径必须是 assets/<slug>/fig_XX.png（在 papers/ 内）；图注来自 manifest。
 - 不写“颠覆一切”“彻底终结”“完美解决”“前所未有”等措辞。
+- 经典文献不是单篇摘要：brief ≥3、standard ≥6、deep ≥10 篇外部文献，综述 ≥15 篇；每条外部文献给 DOI。
+- 引用表至少 5 行，必须写竞争解释与后续检验；不要只列支持本文的工作。
+- 不要用 > [!NOTE] 这类 GitHub 告警语法，VS Code 不渲染它；用 > **一句话结论** 加引用块。
 - 交付前必须运行 --check-note --fix，再运行 --index。
 - 如果正文少于 800 字符、图片为 0、或浏览器被人机验证拦截，先报告，不要硬写。
 ```
@@ -166,6 +187,8 @@
 | “公式写得漂亮一点” | 会诱发编造公式 | “只写原文出现的公式，并标页码” |
 | “图片随便放 assets 里” | 路径不一致导致预览失败 | “统一用 assets/<slug>/fig_XX.png，跑 --check-note” |
 | “补几篇相关文献” | 容易产生不存在的引用 | “只使用工作区内已抽取的论文，或明确标注待补检索” |
+| “只读这一篇，别扯别的” | 经典文献的价值在它和谁对话 | “写文献坐标：前史、竞争解释、后续检验，至少 10 篇外部文献” |
+| “文献数量凑够就行” | 装饰性引用比没有引用更糟 | “只写你真正读过的；读不全就说明缺哪一块” |
 
 ---
 
@@ -195,7 +218,8 @@ Read DOI 10.1038/s41467-026-69772-8.
 3. Write `papers/<slug>.md` using `templates/paper_note.md`.
 4. Use only `assets/<slug>/fig_XX.png` for images, with captions from the manifest.
 5. Do not invent formulas, data, or conclusions. Write "not provided" when evidence is missing.
-6. Finish with `--check-note --fix` and `--index`, and report all warnings.
+6. Place the paper in its citation network: a citation table (>=5 rows), at least 10 external works with DOIs for a deep read, plus competing explanations and later tests.
+7. Finish with `--check-note --fix` and `--index`, and report all warnings.
 ```
 
 **Batch PDFs**

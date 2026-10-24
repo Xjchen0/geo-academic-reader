@@ -1,6 +1,6 @@
 # geo-academic-reader
 
-[![Version](https://img.shields.io/badge/version-0.2.2-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
+[![Version](https://img.shields.io/badge/version-0.3.0--pre.1-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-green.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
@@ -21,7 +21,7 @@ The design separates three responsibilities:
 | :--- | :--- | :--- |
 | Scripts | Fetch, render, download, record provenance | `.raw/<slug>/`, `papers/assets/<slug>/` |
 | Agent | Interpret the evidence, write the note | `papers/<slug>.md` |
-| QA | Verify paths, images, tone, math, placeholders | `--check-note`, `--index` |
+| QA | Verify paths, images, callouts, citation network, tone, math, placeholders | `--check-note`, `--index` |
 
 The scripts never write review prose. That is deliberate: a generator that fills every section with plausible text makes a shallow note look thorough.
 
@@ -127,7 +127,7 @@ The command prints the slug, evidence paths, figure count, extraction route (`te
 
 Give the agent the evidence-pack paths and `templates/paper_note.md`. A typical instruction:
 
-> Read `.raw/<slug>/` and write `papers/<slug>.md` from `templates/paper_note.md`. Use only the extracted text and manifest captions; never invent formulas or conclusions. Link figures as `assets/<slug>/fig_XX.png`. Anchor key claims to a page or section. Finish with `--check-note --fix` and `--index`.
+> Read `.raw/<slug>/` and write `papers/<slug>.md` from `templates/paper_note.md`. Use only the extracted text and manifest captions; never invent formulas or conclusions. Link figures as `assets/<slug>/fig_XX.png`. Anchor key claims to a page or section. Place the paper in its citation network — prehistory, competing explanations, later tests — with a DOI for every external work. Finish with `--check-note --fix` and `--index`.
 
 ### 3. Verify
 
@@ -137,11 +137,26 @@ python3 main.py --index "papers/<slug>.md"
 python3 main.py --list
 ```
 
-`--check-note` verifies image existence, non-zero size, image magic bytes, the canonical figure layout, leftover template text, hyperbolic wording, and balanced `$$`. `--fix` rewrites paths and migrates legacy figures only when the target is unambiguous. Add `--strict` to turn warnings into errors.
+`--check-note` verifies image existence, non-zero size, image magic bytes, the canonical figure layout, leftover template text, hyperbolic wording, balanced `$$`, and the citation network: a 文献坐标 section, a ≥5-row citation table, a 参考文献 section with DOIs, and the external-reference target for the declared `note_depth` (3 / 6 / 10, or 15 for a review). It also rejects GitHub alert syntax, which VS Code renders as literal text. `--fix` rewrites paths, migrates legacy figures, and converts alert markers to labelled blockquotes. Add `--strict` to turn warnings into errors.
 
 ### 4. Preview
 
-Open `papers/<slug>.md` and press `Cmd+Shift+V` (macOS) or `Ctrl+Shift+V`. Native KaTeX and GFM alerts work without extensions.
+Open `papers/<slug>.md` and press `Cmd+Shift+V` (macOS) or `Ctrl+Shift+V`. Native KaTeX works without extensions. Callouts use plain blockquotes with a bold label (`> **一句话结论**`), because VS Code's built-in preview does not render GitHub alert syntax.
+
+---
+
+## Classic papers are citation networks
+
+A classic-paper note that only restates one PDF is not a literature review — it is a book report. Every note therefore carries a `## 0. 文献坐标` section with a citation table (`年份 | 工作 | 核心贡献 | 与本文的关系`), an explicit **竞争解释** paragraph, and a **后续检验** paragraph. `--check-note` requires:
+
+| `note_depth` | Minimum external works | Typical use |
+| :--- | :--- | :--- |
+| `brief` | 3 | one-page briefing |
+| `standard` | 6 | default note |
+| `deep` | 10 | classic-paper deep read |
+| `note_type: 经典文献综述` | 15 | multi-paper review |
+
+The anchor paper is excluded from the count. Only entries under `## 参考文献` count, and each external work should carry a DOI. If the literature cannot be reached, the note says what is missing; padding the bibliography with unread papers is exactly the failure mode this check exists to prevent.
 
 ---
 

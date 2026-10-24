@@ -1,4 +1,4 @@
-# AGENTS.md — geo-academic-reader v0.2.2
+# AGENTS.md — geo-academic-reader v0.3.0-pre.1
 
 > **Read this file before doing any literature task in this workspace.**
 > The workspace turns papers (DOI / URL / PDF) into a **raw evidence pack**, then the agent writes a **VS Code-ready literature note** from that evidence. The Python pipeline never writes review prose.
@@ -141,13 +141,38 @@ The only valid form is note-relative and never leaves `papers/`:
   ```bash
   python3 main.py --check-note papers/<slug>.md --fix
   ```
-  This verifies file existence, non-zero size, image magic bytes, note-relative paths, placeholder content and unbalanced `$$`. With `--fix` it also migrates legacy root-level `assets/` into `papers/assets/` and rewrites the links.
+  This verifies file existence, non-zero size, image magic bytes, note-relative paths, placeholder content, unbalanced `$$`, GitHub alert syntax (§4), and the citation network of §1.5 (related-works section, reference section, external count, citation table, DOI coverage, duplicate DOIs). With `--fix` it also migrates legacy root-level `assets/` into `papers/assets/`, rewrites the links, and converts alert markers into blockquotes.
 
 ### 1.4 Academic neutrality
 
 - Forbidden: “颠覆一切”, “彻底终结”, “空前重大突破”, “完美解决”, “前所未有”.
 - Required: state boundary conditions, sample limits, parameter sensitivity and model assumptions.
 - Distinguish **direct evidence**, **author inference**, and **your own assessment**.
+
+### 1.5 A classic-paper note is a citation network (P0)
+
+A “经典文献精读” is not a summary of one PDF. It has to show what the paper inherited, what it argued against, and what later work did to it. `--check-note` enforces the mechanical part:
+
+| `note_depth` | Minimum external works | Typical use |
+| :--- | :--- | :--- |
+| `brief` | 3 | one-page briefing |
+| `standard` | 6 | default single-paper note |
+| `deep` | 10 | classic-paper deep read |
+| any + `note_type: 经典文献综述` | 15 | multi-paper review |
+
+Required structure:
+
+- A `## 0. 文献坐标` (or 文献脉络 / 研究脉络 / 时间线) section, with a table of at least 5 data rows: `年份 | 工作 | 核心贡献 | 与本文的关系`. Cover **prehistory, competing explanations, and later tests** — not only papers that support the anchor.
+- An explicit **竞争解释** paragraph with at least two rivals and the criterion each one depends on. If the anchor cannot exclude a rival, say so.
+- An explicit **后续检验** paragraph. If you did not search for later work, write “检索未覆盖” rather than implying none exists.
+- A `## 参考文献` section. Every external work gets a DOI or a stable link. Entries you could not verify must be marked “自动构造，需核对”.
+
+Counting and verification rules:
+
+- Only entries under the reference heading count; inline mentions in the body do not.
+- The anchor paper itself is excluded from the external count.
+- Duplicate DOIs, entries without a DOI, a missing reference section and a missing 文献坐标 section are reported by `--check-note`.
+- Do not pad the list with papers you did not read. Three well-understood rivals are worth more than ten decorative citations; if the count is below target, say what is missing instead of inventing entries.
 
 ---
 
@@ -221,14 +246,15 @@ If `warnings` contains “正文少于 800 字符”, treat the text as insuffic
 Use `templates/paper_note.md`. Fill every `{{PLACEHOLDER}}`; delete unused figure sections.
 
 Required content:
-- Front matter: `title`, `journal`, `year`, `doi`, `source`, `raw`, `status`, `reviewed_at`, `tags`.
-- One-sentence conclusion under `> [!NOTE]`.
+- Front matter: `title`, `journal`, `year`, `doi`, `source`, `raw`, `status`, `note_type`, `note_depth`, `reviewed_at`, `tags`. `note_depth` drives the reference target; set it to `brief`, `standard` or `deep` rather than leaving the placeholder.
+- One-sentence conclusion in a blockquote with a bold label, `> **一句话结论**`.
+- `## 0. 文献坐标` with a citation-network table (≥5 rows) plus **竞争解释** and **后续检验** paragraphs, per §1.5.
 - Research question and explicit hypotheses (or “作者未显式提出假说”).
 - Data, methods, boundary conditions, reproducibility.
 - Per-figure reading: axes, variables, controls, inflection points, what the figure supports/does not support.
 - Mechanism/discussion, separating evidence from inference.
-- Limitations under `> [!WARNING]`, including author-stated and reader-identified limits.
-- References; mark constructed citations as “自动构造，需核对”.
+- Limitations in a blockquote labelled `> **边界条件与未解问题**`, including author-stated and reader-identified limits.
+- `## 参考文献` with the anchor plus every external work; each external work needs a DOI. Mark constructed citations as “自动构造，需核对”.
 
 **Evidence anchors** are mandatory for key claims:
 - PDF: `（第 3 页）`
@@ -242,7 +268,7 @@ python3 main.py --check-note papers/<slug>.md --fix
 python3 main.py --index papers/<slug>.md
 ```
 
-If `--check-note` reports errors that cannot be fixed automatically (missing figures, placeholder prose), fix them manually or re-run extraction with browser enabled.
+If `--check-note` reports errors that cannot be fixed automatically (missing figures, placeholder prose, a missing 文献坐标 section, too few external works), fix them manually or re-run extraction with browser enabled. `--fix` rewrites GitHub alert markers into renderable blockquotes; review the generated labels because it cannot infer the right wording.
 
 ### Step 6 — Report to the user
 
@@ -266,11 +292,13 @@ Do not claim completion if images are missing or the note still contains placeho
   $$
   ```
 - Only include equations that appear in the paper or are explicitly labelled as your derivation.
-- GFM alerts:
-  - `> [!NOTE]` — core question / one-sentence conclusion.
-  - `> [!IMPORTANT]` — parameters and constraints.
-  - `> [!TIP]` — how to read a figure.
-  - `> [!WARNING]` — limitations and uncertainty.
+- Callouts use plain blockquotes with a bold first line — **not** GitHub alert syntax (`> [!NOTE]`), because VS Code's built-in Markdown preview renders that syntax as literal text:
+  ```markdown
+  > **一句话结论**
+  >
+  > 核心结论及其成立条件。
+  ```
+  Use the labels `一句话结论`, `关键前提`, `读图要点`, `边界条件与未解问题`, `机制链条`, `检索局限`.
 - Full rules: `rules/MARKDOWN_SPEC.md`.
 
 ---
@@ -306,7 +334,10 @@ For a review covering multiple papers, use `templates/literature_review.md`; eve
 - [ ] Figures preferred from browser; PDF fallback explicitly marked.
 - [ ] Note written from `templates/paper_note.md`; no placeholder prose.
 - [ ] Every key claim has an evidence anchor.
+- [ ] `## 0. 文献坐标` has a ≥5-row citation table plus 竞争解释 and 后续检验; external works meet the `note_depth` target.
+- [ ] Every external work has a verified DOI, or is marked “自动构造，需核对”.
 - [ ] Every image uses `assets/<slug>/...` inside `papers/` and passes `--check-note`.
+- [ ] No GitHub alert syntax (`> [!NOTE]`) remains in the note.
 - [ ] `papers/INDEX.md` updated with `--index`.
 - [ ] User received paths, figure origin and warnings.
 
@@ -323,6 +354,9 @@ For a review covering multiple papers, use `templates/literature_review.md`; eve
 | Images not visible in VS Code | Run `--check-note --fix`; confirm the note uses `assets/<slug>/...`, not `../assets/...` |
 | Legacy root `assets/` | `python3 main.py --check-note --fix` copies files into `papers/assets/` and rewrites links |
 | Note looks generic | Delete it and re-write from the evidence pack; never keep placeholder prose |
+| `github_alert_syntax` | Run `--check-note --fix`, then reword the generated `> **要点**` label to the real one |
+| `thin_reference_context` | Add the missing prehistory / rival / later-test papers, or lower `note_depth` if the user asked for a brief |
+| `missing_reference_section` | Add `## 参考文献`; do not leave the anchor as the only entry |
 | Crossref 404 | Use `--url` or `--pdf`; the pipeline will still build an evidence pack |
 
 Detailed recovery: `rules/TROUBLESHOOTING.md`.

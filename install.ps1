@@ -1,11 +1,11 @@
 # geo-academic-reader: Fast Windows PowerShell Installer
-# Version: 0.2.2 (MIT License)
+# Version: 0.3.0-pre.1 (MIT License)
 
 $ErrorActionPreference = "Stop"
 
 Write-Host "===================================================================" -ForegroundColor Cyan
 Write-Host "  🌍 geo-academic-reader Installer (Windows)" -ForegroundColor Cyan
-Write-Host "  Version: 0.2.2 (MIT License)" -ForegroundColor Cyan
+Write-Host "  Version: 0.3.0-pre.1 (MIT License)" -ForegroundColor Cyan
 Write-Host "===================================================================" -ForegroundColor Cyan
 
 # Force UTF-8 for console output
