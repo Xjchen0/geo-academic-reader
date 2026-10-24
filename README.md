@@ -1,6 +1,6 @@
 # geo-academic-reader
 
-[![Version](https://img.shields.io/badge/version-0.3.0--pre.1-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
+[![Version](https://img.shields.io/badge/version-0.3.1-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-green.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
@@ -139,6 +139,22 @@ python3 main.py --list
 
 `--check-note` verifies image existence, non-zero size, image magic bytes, the canonical figure layout, leftover template text, hyperbolic wording, balanced `$$`, and the citation network: a 文献坐标 section, a ≥5-row citation table, a 参考文献 section with DOIs, and the external-reference target for the declared `note_depth` (3 / 6 / 10, or 15 for a review). It also rejects GitHub alert syntax, which VS Code renders as literal text. `--fix` rewrites paths, migrates legacy figures, and converts alert markers to labelled blockquotes. Add `--strict` to turn warnings into errors.
 
+---
+
+## Updates
+
+After a task, run `--check-update` once. It reads the GitHub releases API, caches the answer for six hours, and exits 0 when GitHub is unreachable, so it never fails an offline session.
+
+```bash
+python3 main.py --check-update              # 0.3.1 → 0.3.2, or "up to date"
+python3 main.py --update --dry-run          # show the target
+python3 main.py --update                    # update, keep your work
+```
+
+`--update` uses `git merge --ff-only <tag>` in a git checkout, and the release tarball for a copy without `.git`. It never writes `papers/`, `.raw/`, `.geo-reader/` or `input_pdfs/`; `.geo-reader/profile.json` is backed up to `.geo-reader/backups/` and restored if anything goes wrong. A dirty tracked tree or diverged history is refused rather than reset. Use `--prerelease` only if you deliberately track prereleases.
+
+Versioning is patch-first: a fix, a docs change or a small local improvement bumps `0.3.0 → 0.3.1`; a new capability bumps the minor unless requested otherwise.
+
 ### 4. Preview
 
 Open `papers/<slug>.md` and press `Cmd+Shift+V` (macOS) or `Ctrl+Shift+V`. Native KaTeX works without extensions. Callouts use plain blockquotes with a bold label (`> **一句话结论**`), because VS Code's built-in preview does not render GitHub alert syntax.
@@ -209,6 +225,8 @@ python3 main.py --index NOTE            Add/update a row in papers/INDEX.md
 python3 main.py --list                  List evidence packs and notes
 python3 main.py --profile [--json]      Show the saved preferences
 python3 main.py --guide                 Print the quick-start guide
+python3 main.py --check-update          Check GitHub for a newer release (cached 6 h)
+python3 main.py --update                Update code; profile, notes and packs preserved
 python3 main.py --doctor                Environment diagnostics
 python3 main.py                         Interactive menu (terminal only)
 ```

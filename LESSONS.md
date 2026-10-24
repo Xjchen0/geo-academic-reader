@@ -87,3 +87,11 @@ Observations from running this workspace on real papers. The theme is the same t
 - Give each subagent: the slug, the evidence-pack paths, the note template, the QA commands, and the instruction not to invent content.
 - The parent should receive the note path, a 3–5 sentence summary, figure count and origin, QA status, and any unresolved warnings.
 - Review at least one subagent-produced note yourself before trusting the batch; template drift is contagious.
+
+## [tags: updates, data-safety, versioning] Updates Replace Code, Never Evidence
+
+- A paper workspace holds two kinds of files with opposite lifecycles: code (replaceable) and notes/packs/preferences (not replaceable). Mixing them in one updater is how people lose months of work.
+- The updater's allowlist is the safety boundary. `papers/`, `.raw/`, `.geo-reader/` and `input_pdfs/` are never in it; a git checkout is fast-forwarded only when the tracked tree is clean.
+- Refusing to update a dirty tree is the correct behaviour, not a bug. A silent `reset --hard` would "fix" the error by deleting the user's work.
+- Version checks must be cheap and offline-safe: a six-hour cache, a short timeout, exit code 0 on failure. An update check that fails a reading task trains users to disable it.
+- Patch-first versioning (`0.3.0 → 0.3.1`) keeps release numbering legible for a user who only wants to know whether their copy is current.

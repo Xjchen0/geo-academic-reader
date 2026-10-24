@@ -4,6 +4,7 @@
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -20,6 +21,7 @@ from .config import (
 from .evidence import extract_evidence
 from .note_check import check_notes, index_note, list_workspace
 from .onboarding import print_guide, print_profile, profile_summary
+from .updater import check_for_update, format_check, format_update, update_workspace
 from .version import __version__
 
 BANNER = r"""
@@ -40,6 +42,7 @@ MENU = r"""
   [8] 查看证据包与笔记列表
   [9] 查看快速上手与提示词
   [10] 环境自检 (doctor)
+  [11] 检查更新 / 更新到最新版本
   [0] 退出
 """
 
@@ -129,6 +132,53 @@ def _print_lists(payload: dict) -> None:
         print("  - {} | {} | {}".format(note["status"], note["title"], note["note"]))
 
 
+def _run_update_check(args) -> int:
+    payload = check_for_update(
+        include_prerelease=args.prerelease, refresh=args.refresh, timeout=8.0
+    )
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(format_check(payload))
+    # A failed network check is not a task failure.
+    return 0
+
+
+def _run_update(args) -> int:
+    payload = update_workspace(
+        include_prerelease=args.prerelease,
+        force=args.force,
+        dry_run=args.dry_run,
+        log=(lambda *_a, **_k: None) if (args.json or args.quiet) else print,
+    )
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(format_update(payload))
+    return 0 if not payload.get("error") else 1
+
+
+def _notify_update_if_available(args) -> None:
+    """One-line hint after a completed task; never blocks long or raises."""
+    if getattr(args, "json", False) or getattr(args, "quiet", False):
+        return
+    if os.environ.get("GEO_READER_NO_UPDATE_CHECK"):
+        return
+    if not profile_exists():
+        return
+    try:
+        payload = check_for_update(timeout=2.5)
+    except Exception:
+        return
+    if payload.get("reachable") and payload.get("has_update"):
+        print(
+            "\n提示：发现新版本 {}（当前 {}）。运行 python3 main.py --update "
+            "可在保留偏好的前提下更新。".format(
+                payload.get("latest_version"), payload.get("current") or __version__
+            )
+        )
+
+
 def interactive_menu() -> int:
     profile = load_profile()
     print(BANNER)
@@ -174,6 +224,15 @@ def interactive_menu() -> int:
         return 0
     if choice == "10":
         return _run_doctor()
+    if choice == "11":
+        _run_update_check(_default_args())
+        try:
+            answer = input("现在更新到最新版本？[y/N]: ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            answer = ""
+        if answer in ("y", "yes"):
+            return _run_update(_default_args())
+        return 0
     if choice == "0":
         print("再见。")
         return 0
@@ -182,12 +241,17 @@ def interactive_menu() -> int:
 
 
 class _Args:
-    def __init__(self, browser=None, wait=4.0, max_figures=30, json=False, quiet=False):
+    def __init__(self, browser=None, wait=4.0, max_figures=30, json=False, quiet=False,
+                 prerelease=False, refresh=False, force=False, dry_run=False):
         self.browser = browser
         self.wait = wait
         self.max_figures = max_figures
         self.json = json
         self.quiet = quiet
+        self.prerelease = prerelease
+        self.refresh = refresh
+        self.force = force
+        self.dry_run = dry_run
 
 
 def _default_args() -> _Args:
@@ -215,6 +279,8 @@ def build_parser() -> argparse.ArgumentParser:
     group.add_argument("--list", action="store_true", help="List evidence packs and notes")
     group.add_argument("--profile", action="store_true", help="Show the saved preferences (or whether onboarding is still pending)")
     group.add_argument("--guide", action="store_true", help="Print the quick-start guide")
+    group.add_argument("--check-update", action="store_true", help="Check GitHub for a newer release (cached for 6 h)")
+    group.add_argument("--update", action="store_true", help="Update the workspace, preserving profile, notes and evidence packs")
 
     parser.add_argument("--browser", choices=["auto", "existing", "off"], help="Browser policy (default: profile)")
     parser.add_argument("--no-browser", dest="browser", action="store_const", const="off", help="Alias for --browser off")
@@ -222,6 +288,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-figures", type=int, default=30, help="Maximum figures to download (default: 30)")
     parser.add_argument("--fix", action="store_true", help="With --check-note: rewrite broken paths and migrate legacy assets/")
     parser.add_argument("--strict", action="store_true", help="Treat warnings as errors in --check-note")
+    parser.add_argument("--refresh", action="store_true", help="With --check-update: ignore the cached result")
+    parser.add_argument("--prerelease", action="store_true", help="Include GitHub prereleases when checking for updates")
+    parser.add_argument("--dry-run", action="store_true", help="With --update: show the target version without changing files")
+    parser.add_argument("--force", action="store_true", help="With --update: reinstall even when already up to date")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON")
     parser.add_argument("--quiet", action="store_true", help="Reduce progress output")
     return parser
@@ -243,12 +313,15 @@ def main(argv=None) -> int:
         reports = check_notes(targets, fix=args.fix, strict=args.strict)
         if args.json:
             print(json.dumps(reports, ensure_ascii=False, indent=2))
-        return 0 if all(report.get("errors", 0) == 0 for report in reports) else 1
+        code = 0 if all(report.get("errors", 0) == 0 for report in reports) else 1
+        _notify_update_if_available(args)
+        return code
 
     if args.index:
         result = index_note(Path(args.index))
         print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else
               "已更新 papers/INDEX.md\n{}".format(result["row"]))
+        _notify_update_if_available(args)
         return 0
 
     if args.list:
@@ -278,14 +351,27 @@ def main(argv=None) -> int:
             print_profile(load_profile())
         return 0
 
+    if args.check_update:
+        return _run_update_check(args)
+    if args.update:
+        return _run_update(args)
+
     if args.doi:
-        return _run_extraction("doi", args.doi, args)
+        code = _run_extraction("doi", args.doi, args)
+        _notify_update_if_available(args)
+        return code
     if args.url:
-        return _run_extraction("url", args.url, args)
+        code = _run_extraction("url", args.url, args)
+        _notify_update_if_available(args)
+        return code
     if args.pdf:
-        return _run_extraction("pdf", args.pdf, args)
+        code = _run_extraction("pdf", args.pdf, args)
+        _notify_update_if_available(args)
+        return code
     if args.batch_pdfs:
-        return _run_batch(args)
+        code = _run_batch(args)
+        _notify_update_if_available(args)
+        return code
 
     # No action selected.
     if len(sys.argv) == 1:

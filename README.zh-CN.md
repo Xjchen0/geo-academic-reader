@@ -1,6 +1,6 @@
 # geo-academic-reader
 
-[![Version](https://img.shields.io/badge/version-0.3.0--pre.1-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
+[![Version](https://img.shields.io/badge/version-0.3.1-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-green.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
@@ -139,7 +139,19 @@ python3 main.py --list
 
 `--check-note` 会检查图片是否存在、是否为零字节、magic bytes 是否为图片、是否符合规范图库布局，同时检查模板残留、夸大措辞、未闭合的 `$$` 和引用网络：是否有文献坐标章节、引用表是否 ≥5 行、参考文献是否带 DOI、外部文献数量是否达到 `note_depth` 要求（3 / 6 / 10，综述 15）。GitHub 告警语法会被判为错误，因为 VS Code 只会把它当普通文字显示。`--fix` 会改写路径、迁移旧版图库，并把告警标记改成带粗体标签的引用块。加 `--strict` 可把警告视为错误。
 
-### 4. 预览
+### 4. 检查更新
+
+```bash
+python3 main.py --check-update              # 例如 0.3.1 → 0.3.2，或“已是最新”
+python3 main.py --update --dry-run          # 只预览目标版本
+python3 main.py --update                    # 更新，同时保留现有资料
+```
+
+`--check-update` 读取 GitHub Releases，结果缓存 6 小时；访问不了 GitHub 时以退出码 0 结束，不会让一次正常的阅读任务失败。`--update` 在 git 仓库里使用 `git merge --ff-only <tag>`，没有 `.git` 时下载对应 tag 的源码包，只覆盖代码与文档，不会写入 `papers/`、`.raw/`、`.geo-reader/` 或 `input_pdfs/`。`.geo-reader/profile.json` 会先备份到 `.geo-reader/backups/`，异常时自动恢复。工作区有未提交的代码改动，或本地历史与上游分叉时，会拒绝更新而不是覆盖。只有明确要跟踪预发布时才加 `--prerelease`。
+
+版本策略以小版本为主：修复、文档或小范围改进默认 `0.3.0 → 0.3.1`；新增能力默认升 minor，除非另有要求。
+
+### 5. 预览
 
 打开 `papers/<slug>.md`，按 `Cmd+Shift+V`（macOS）或 `Ctrl+Shift+V`。原生 KaTeX 开箱可用，无需插件。提示块使用纯 Markdown 引用块加粗标签（`> **一句话结论**`），因为 VS Code 内置预览不渲染 GitHub 告警语法。
 
@@ -209,6 +221,8 @@ python3 main.py --index NOTE            写入/更新 papers/INDEX.md
 python3 main.py --list                  列出证据包与笔记
 python3 main.py --profile [--json]      查看当前偏好
 python3 main.py --guide                 打印快速上手
+python3 main.py --check-update          检查 GitHub 新版本（缓存 6 小时）
+python3 main.py --update                更新代码，保留偏好、笔记与证据包
 python3 main.py --doctor                环境自检
 python3 main.py                         交互菜单（仅终端）
 ```

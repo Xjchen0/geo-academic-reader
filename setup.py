@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="geo-academic-reader",
-    version="0.3.0-pre.1",
+    version="0.3.1",
     packages=find_packages(include=["scripts", "scripts.*"]),
     py_modules=["doctor"],
     install_requires=[

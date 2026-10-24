@@ -1,4 +1,4 @@
-# AGENTS.md — geo-academic-reader v0.3.0-pre.1
+# AGENTS.md — geo-academic-reader v0.3.1
 
 > **Read this file before doing any literature task in this workspace.**
 > The workspace turns papers (DOI / URL / PDF) into a **raw evidence pack**, then the agent writes a **VS Code-ready literature note** from that evidence. The Python pipeline never writes review prose.
@@ -92,6 +92,15 @@ Write `.geo-reader/profile.json` yourself (create the directory). Use this schem
 | `citation` | `apa` / `nature` / `gbt7714` | Citation format for the reference section. |
 
 `python3 main.py --guide` prints the same choices for the user.
+
+### 0.6 Updates: check after a task, upgrade only with consent
+
+- After finishing a literature task, run `python3 main.py --check-update` once. It uses a 6-hour cache and exits 0 when GitHub is unreachable, so it never turns a successful task into a failure. The CLI also prints a one-line hint after extraction/QA when a newer release is known.
+- If a newer version exists, report it in one line (`current → latest`, release URL) and offer `python3 main.py --update`. Never upgrade without the user's consent.
+- `--update` preserves `.geo-reader/profile.json` (with a timestamped backup under `.geo-reader/backups/`), `papers/`, `.raw/` and `input_pdfs/`. Git checkouts fast-forward to the release tag; a dirty tracked tree or diverged history is refused, never reset.
+- `GEO_READER_NO_UPDATE_CHECK=1` disables the automatic hint for offline or metered use.
+
+Version policy: a small change (fix, docs, local improvement) bumps the patch (`0.3.0 → 0.3.1`); a new capability bumps the minor unless the user asks otherwise. Tags are never reused; release notes live in the GitHub release body.
 
 ---
 
@@ -280,6 +289,16 @@ Report:
 
 Do not claim completion if images are missing or the note still contains placeholders.
 
+### Step 7 — Check for updates (after the task)
+
+```bash
+python3 main.py --check-update          # cached for 6 h; exit 0 when offline
+python3 main.py --update --dry-run      # show the target without changing files
+python3 main.py --update                # apply; profile, notes and packs are kept
+```
+
+Report the result only when an update exists, or when the user asked for a check. Use `--prerelease` only if the user is deliberately tracking prereleases.
+
 ---
 
 ## 4. Math and Markdown standards
@@ -340,6 +359,7 @@ For a review covering multiple papers, use `templates/literature_review.md`; eve
 - [ ] No GitHub alert syntax (`> [!NOTE]`) remains in the note.
 - [ ] `papers/INDEX.md` updated with `--index`.
 - [ ] User received paths, figure origin and warnings.
+- [ ] Update check run once (`--check-update`); result mentioned only if an update exists or the user asked.
 
 ---
 
@@ -357,6 +377,10 @@ For a review covering multiple papers, use `templates/literature_review.md`; eve
 | `github_alert_syntax` | Run `--check-note --fix`, then reword the generated `> **要点**` label to the real one |
 | `thin_reference_context` | Add the missing prehistory / rival / later-test papers, or lower `note_depth` if the user asked for a brief |
 | `missing_reference_section` | Add `## 参考文献`; do not leave the anchor as the only entry |
+| `--check-update` says offline | Not an error; retry later with `--refresh`, or set `GEO_READER_NO_UPDATE_CHECK=1` to silence the hint |
+| `--update` refuses on a dirty tree | Commit or `git stash` the code changes; never `git reset --hard`. Notes and `.raw/` are unaffected |
+| `--update` fails to fast-forward | Local history diverged from the release; report it and let the user decide (merge/rebase). Never force |
+| Profile missing after an update | Restore `.geo-reader/backups/profile-<timestamp>.json`; `--update` also restores it automatically |
 | Crossref 404 | Use `--url` or `--pdf`; the pipeline will still build an evidence pack |
 
 Detailed recovery: `rules/TROUBLESHOOTING.md`.

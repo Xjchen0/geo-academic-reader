@@ -154,6 +154,21 @@ Do not delete `.raw/` casually: it is the audit trail for every claim in the not
 
 ---
 
+## Updates
+
+| Symptom | Likely cause | What to do |
+| :--- | :--- | :--- |
+| `--check-update` prints “无法访问 GitHub” | Offline, proxy, DNS, or API rate limit | This is not an error; retry later with `--check-update --refresh`, or set `GEO_READER_NO_UPDATE_CHECK=1` |
+| `--update` says “本地有未提交的代码改动” | Tracked files differ from HEAD | Commit or `git stash` first. Never use `git reset --hard`; notes, packs and PDFs are not affected |
+| `--update` cannot fast-forward | Local commits diverged from the release tag | Merge or rebase deliberately. The updater refuses instead of overwriting |
+| `--update` fails while downloading | Network interrupted or tag missing | Retry; verify the tag on the release page. A git checkout can also run `git fetch --tags` manually |
+| Profile seems reset after an update | Rare partial restore | Restore `.geo-reader/backups/profile-<timestamp>.json`; the updater restores automatically when it detects a change |
+| Update available but you are on a prerelease | Stable channel is the default | `--check-update --prerelease`, then `--update --prerelease` |
+
+`--update` writes only the paths listed in `scripts/updater.py:UPGRADE_PATHS` when it has to use the tarball fallback. `papers/`, `.raw/`, `.geo-reader/` and `input_pdfs/` are deliberately outside that list.
+
+---
+
 ## Reporting a reproducible problem
 
 Include:

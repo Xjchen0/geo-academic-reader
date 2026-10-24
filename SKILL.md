@@ -1,6 +1,6 @@
 ---
 name: geo-academic-reader
-version: "0.3.0-pre.1"
+version: "0.3.1"
 license: MIT
 description: >-
   Browser-first evidence extraction and VS Code-ready literature notes for scientific
@@ -13,7 +13,7 @@ compatibility: >-
   Optional: pymupdf for better PDF figure cropping.
 ---
 
-# geo-academic-reader (v0.3.0-pre.1)
+# geo-academic-reader (v0.3.1)
 
 A workspace-level workflow, not a one-shot summarizer. The scripts extract evidence; the agent interprets it; a QA command verifies the note before delivery.
 
@@ -51,6 +51,10 @@ python3 main.py --batch-pdfs
 # 4. Validate and index
 python3 main.py --check-note "papers/<slug>.md" --fix
 python3 main.py --index "papers/<slug>.md"
+
+# 5. Keep the workspace current (profile, notes and packs are preserved)
+python3 main.py --check-update
+python3 main.py --update
 ```
 
 Installed entry points: `geo-reader`, `geo-doctor`.
@@ -171,6 +175,22 @@ This updates the 7-column row in `papers/INDEX.md`.
 
 ---
 
+## 🔄 Updates
+
+After a task, run `python3 main.py --check-update` once. It caches for 6 hours and exits 0 when GitHub is unreachable, so offline use is unaffected.
+
+| Command | Behaviour |
+|:---|:---|
+| `--check-update` | Compare the local version with the latest GitHub release |
+| `--check-update --refresh` | Ignore the cache |
+| `--check-update --prerelease` | Include prereleases |
+| `--update --dry-run` | Show the target version without changing files |
+| `--update` | Fast-forward a git checkout to the release tag, or copy the release tarball for a non-git copy |
+
+Guarantees: `.geo-reader/profile.json` is backed up and restored if needed; `papers/`, `.raw/` and `input_pdfs/` are never written. A dirty tracked tree or diverged history is refused, never reset. Tell the user about a new release in one line; do not update without consent.
+
+---
+
 ## 🛑 Common Errors & Recovery
 
 | Symptom | Meaning | Action |
@@ -184,6 +204,9 @@ This updates the 7-column row in `papers/INDEX.md`.
 | Image missing in preview | Wrong relative path or legacy layout | `--check-note --fix`; expected `assets/<slug>/...` under `papers/` |
 | `github_alert_syntax` | VS Code does not render `> [!NOTE]` | `--check-note --fix`, then reword the generated label |
 | `thin_reference_context` | The note summarises one paper only | Add prehistory, rival explanations and later tests, or set a lower `note_depth` |
+| `--check-update` says offline | GitHub unreachable or rate-limited | Not an error; retry with `--refresh`, or set `GEO_READER_NO_UPDATE_CHECK=1` |
+| `--update` refuses on a dirty tree | Local tracked code changes | Commit or `git stash`; never `reset --hard`. Notes and packs are untouched |
+| Profile missing after update | Rare partial restore | Restore `.geo-reader/backups/profile-<timestamp>.json`; `--update` also restores automatically |
 | Crossref 404 | New/preprint DOI | Use `--url`, or download the PDF and use `--pdf` |
 | PDF text empty | Scanned PDF, no text layer | OCR is not included; obtain a text PDF or use the publisher page |
 

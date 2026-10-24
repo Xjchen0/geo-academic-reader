@@ -160,7 +160,31 @@
 
 ---
 
-## 8. 给 Agent 的硬约束（可附加到任何任务）
+## 8. 检查更新与升级
+
+```text
+每次任务结束后运行 python3 main.py --check-update。
+如果有新版本，只用一句话告诉我“当前 → 最新”和发布页；不要自动更新。
+我说“更新”之后再运行 python3 main.py --update，并确认：
+- .geo-reader/profile.json 还在，内容与更新前一致；
+- papers/、.raw/、input_pdfs/ 的数量没有减少；
+- 最后运行 python3 main.py --doctor。
+
+如果 --update 因为“本地有未提交的代码改动”或“历史分叉”被拒绝，原样告诉我原因，
+不要用 git reset --hard、git checkout -- 或删除文件的方式绕过。
+```
+
+常用参数：
+
+- `--check-update --refresh`：忽略 6 小时缓存。
+- `--check-update --prerelease`：把预发布版本也纳入比较。
+- `--update --dry-run`：只显示将更新到哪个版本。
+- `--prerelease` / `--force`：跟踪预发布；已是最新时仍重装。
+- `GEO_READER_NO_UPDATE_CHECK=1`：关闭任务结束后的自动提示。
+
+---
+
+## 9. 给 Agent 的硬约束（可附加到任何任务）
 
 ```text
 工作区硬约束：
@@ -173,12 +197,13 @@
 - 引用表至少 5 行，必须写竞争解释与后续检验；不要只列支持本文的工作。
 - 不要用 > [!NOTE] 这类 GitHub 告警语法，VS Code 不渲染它；用 > **一句话结论** 加引用块。
 - 交付前必须运行 --check-note --fix，再运行 --index。
+- 任务结束后运行一次 --check-update（缓存 6 小时）；离线失败不算任务失败。发现新版本只提示，不擅自升级。
 - 如果正文少于 800 字符、图片为 0、或浏览器被人机验证拦截，先报告，不要硬写。
 ```
 
 ---
 
-## 9. 常见误用
+## 10. 常见误用
 
 | 不要这样说 | 为什么 | 改成 |
 | :--- | :--- | :--- |
@@ -189,6 +214,7 @@
 | “补几篇相关文献” | 容易产生不存在的引用 | “只使用工作区内已抽取的论文，或明确标注待补检索” |
 | “只读这一篇，别扯别的” | 经典文献的价值在它和谁对话 | “写文献坐标：前史、竞争解释、后续检验，至少 10 篇外部文献” |
 | “文献数量凑够就行” | 装饰性引用比没有引用更糟 | “只写你真正读过的；读不全就说明缺哪一块” |
+| “更新时把我的笔记也重置一下” | 更新只应替换代码，笔记是用户资产 | “只更新代码与文档，保留 profile、papers/、.raw/、input_pdfs/” |
 
 ---
 
@@ -237,3 +263,12 @@ Keep each paper's full text out of the parent context.
 Run `python3 main.py --check-note "papers/<slug>.md" --fix`.
 Explain every remaining error, verify that each file is a real image (magic bytes), and mark genuinely missing figures instead of deleting them.
 ```
+
+**Check for updates**
+
+```text
+Run `python3 main.py --check-update` after the task. If a newer release exists, tell me the current → latest versions and the release URL in one line; do not update on your own.
+When I say update, run `python3 main.py --update`, then confirm that `.geo-reader/profile.json` is unchanged, the counts under `papers/`, `.raw/` and `input_pdfs/` did not drop, and finish with `python3 main.py --doctor`.
+If the updater refuses because of uncommitted code or diverged history, report the reason. Never use `reset --hard` or delete files to force it.
+```
+
