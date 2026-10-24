@@ -1,6 +1,6 @@
 ---
 name: geo-academic-reader
-version: "0.3.1"
+version: "0.3.2"
 license: MIT
 description: >-
   Browser-first evidence extraction and VS Code-ready literature notes for scientific
@@ -13,7 +13,7 @@ compatibility: >-
   Optional: pymupdf for better PDF figure cropping.
 ---
 
-# geo-academic-reader (v0.3.1)
+# geo-academic-reader (v0.3.2)
 
 A workspace-level workflow, not a one-shot summarizer. The scripts extract evidence; the agent interprets it; a QA command verifies the note before delivery.
 
@@ -185,7 +185,7 @@ After a task, run `python3 main.py --check-update` once. It caches for 6 hours a
 | `--check-update --refresh` | Ignore the cache |
 | `--check-update --prerelease` | Include prereleases |
 | `--update --dry-run` | Show the target version without changing files |
-| `--update` | Fast-forward a git checkout to the release tag, or copy the release tarball for a non-git copy |
+| `--update` | Fast-forward a git checkout to the release tag, or copy the release payload from a shallow sparse clone / tarball for a non-git copy |
 
 Guarantees: `.geo-reader/profile.json` is backed up and restored if needed; `papers/`, `.raw/` and `input_pdfs/` are never written. A dirty tracked tree or diverged history is refused, never reset. Tell the user about a new release in one line; do not update without consent.
 

@@ -1,6 +1,6 @@
 # geo-academic-reader
 
-[![Version](https://img.shields.io/badge/version-0.3.1-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
+[![Version](https://img.shields.io/badge/version-0.3.2-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-green.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
@@ -151,9 +151,13 @@ python3 main.py --update --dry-run          # show the target
 python3 main.py --update                    # update, keep your work
 ```
 
-`--update` uses `git merge --ff-only <tag>` in a git checkout, and the release tarball for a copy without `.git`. It never writes `papers/`, `.raw/`, `.geo-reader/` or `input_pdfs/`; `.geo-reader/profile.json` is backed up to `.geo-reader/backups/` and restored if anything goes wrong. A dirty tracked tree or diverged history is refused rather than reset. Use `--prerelease` only if you deliberately track prereleases.
+`--update` uses `git merge --ff-only <tag>` in a git checkout. A copy without `.git` is updated from a shallow sparse clone of the tag, falling back to the release tarball. It never writes `papers/`, `.raw/`, `.geo-reader/` or `input_pdfs/`; `.geo-reader/profile.json` is backed up to `.geo-reader/backups/` and restored if anything goes wrong. A dirty tracked tree or diverged history is refused rather than reset. Use `--prerelease` only if you deliberately track prereleases.
 
 Versioning is patch-first: a fix, a docs change or a small local improvement bumps `0.3.0 → 0.3.1`; a new capability bumps the minor unless requested otherwise.
+
+> **One-time note**
+>
+> The updater itself ships from 0.3.1 onward. A copy older than 0.3.1 needs one manual upgrade (`git pull --ff-only` or a fresh download); after that, `--update` handles later releases.
 
 ### 4. Preview
 

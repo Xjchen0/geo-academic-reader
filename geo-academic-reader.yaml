@@ -1,6 +1,6 @@
 preset:
   name: geo-academic-reader
-  version: "0.3.1"
+  version: "0.3.2"
   license: "MIT"
   description: "Browser-first evidence extraction and VS Code literature-note workflow for geosciences and general science. Scripts extract evidence; agents write notes."
 

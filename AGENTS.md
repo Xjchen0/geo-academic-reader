@@ -1,4 +1,4 @@
-# AGENTS.md — geo-academic-reader v0.3.1
+# AGENTS.md — geo-academic-reader v0.3.2
 
 > **Read this file before doing any literature task in this workspace.**
 > The workspace turns papers (DOI / URL / PDF) into a **raw evidence pack**, then the agent writes a **VS Code-ready literature note** from that evidence. The Python pipeline never writes review prose.
@@ -97,10 +97,10 @@ Write `.geo-reader/profile.json` yourself (create the directory). Use this schem
 
 - After finishing a literature task, run `python3 main.py --check-update` once. It uses a 6-hour cache and exits 0 when GitHub is unreachable, so it never turns a successful task into a failure. The CLI also prints a one-line hint after extraction/QA when a newer release is known.
 - If a newer version exists, report it in one line (`current → latest`, release URL) and offer `python3 main.py --update`. Never upgrade without the user's consent.
-- `--update` preserves `.geo-reader/profile.json` (with a timestamped backup under `.geo-reader/backups/`), `papers/`, `.raw/` and `input_pdfs/`. Git checkouts fast-forward to the release tag; a dirty tracked tree or diverged history is refused, never reset.
+- `--update` preserves `.geo-reader/profile.json` (with a timestamped backup under `.geo-reader/backups/`), `papers/`, `.raw/` and `input_pdfs/`. Git checkouts fast-forward to the release tag; a copy without `.git` uses a shallow sparse clone, then the release tarball. A dirty tracked tree or diverged history is refused, never reset.
 - `GEO_READER_NO_UPDATE_CHECK=1` disables the automatic hint for offline or metered use.
 
-Version policy: a small change (fix, docs, local improvement) bumps the patch (`0.3.0 → 0.3.1`); a new capability bumps the minor unless the user asks otherwise. Tags are never reused; release notes live in the GitHub release body.
+Version policy: a small change (fix, docs, local improvement) bumps the patch (`0.3.0 → 0.3.1`); a new capability bumps the minor unless the user asks otherwise. Tags are never reused; release notes live in the GitHub release body. The updater itself ships from 0.3.1 onward, so an older copy needs one manual `git pull --ff-only` (or a fresh download) before `--update` exists.
 
 ---
 

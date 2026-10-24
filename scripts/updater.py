@@ -34,7 +34,10 @@ from .version import __version__
 GITHUB_REPO = "Xjchen0/geo-academic-reader"
 RELEASES_API = "https://api.github.com/repos/{}/releases?per_page=30".format(GITHUB_REPO)
 RELEASE_URL = "https://github.com/{}/releases/tag/{}"
-TARBALL_URL = "https://github.com/{}/archive/refs/tags/{}.tar.gz"
+TARBALL_URLS = (
+    "https://codeload.github.com/{repo}/tar.gz/refs/tags/{tag}",
+    "https://github.com/{repo}/archive/refs/tags/{tag}.tar.gz",
+)
 CACHE_PATH = GUIDE_DIR / "update-check.json"
 CACHE_TTL_SECONDS = 6 * 60 * 60
 OFFLINE_TTL_SECONDS = 30 * 60
@@ -67,6 +70,10 @@ UPGRADE_PATHS = (
     "rules",
     "tests",
 )
+
+# Cone-mode sparse checkout accepts directories only; root files are included
+# automatically.
+SPARSE_DIRS = ("scripts", "templates", "rules", "tests")
 
 _VERSION_RE = re.compile(
     r"^v?(?P<major>\d+)(?:\.(?P<minor>\d+))?(?:\.(?P<patch>\d+))?"
@@ -383,13 +390,64 @@ def _backup_profile() -> Optional[Path]:
         return None
 
 
-def _download_tarball(url: str, timeout: float, log) -> bytes:
-    request = urllib.request.Request(
-        url, headers={"User-Agent": "geo-academic-reader/{}".format(__version__)}
-    )
-    log("下载 {}".format(url))
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return response.read()
+def _clone_payload(tag: str, timeout: float, log) -> List[str]:
+    """Copy the code payload from a shallow, sparse clone of the release tag.
+
+    Used when the workspace is not itself a git checkout but git is
+    available. Sparse checkout keeps the user's notes and figures out of the
+    download.
+    """
+    url = "https://github.com/{}.git".format(GITHUB_REPO)
+    with tempfile.TemporaryDirectory(prefix="geo-reader-clone-") as temp:
+        destination = Path(temp) / "src"
+        log("克隆 {} ({}) ...".format(url, tag))
+        base = [
+            "git", "clone", "--depth", "1", "--branch", tag,
+            "--single-branch", url, str(destination),
+        ]
+        sparse_cmd = [
+            "git", "clone", "--depth", "1", "--branch", tag,
+            "--single-branch", "--filter=blob:none", "--sparse",
+            url, str(destination),
+        ]
+        sparse = subprocess.run(
+            sparse_cmd, text=True, capture_output=True, timeout=timeout,
+        )
+        if sparse.returncode == 0:
+            checkout = subprocess.run(
+                ["git", "-C", str(destination), "sparse-checkout", "set"] + list(SPARSE_DIRS),
+                text=True, capture_output=True, timeout=timeout,
+            )
+            if checkout.returncode != 0:
+                raise OSError("sparse checkout 失败: {}".format(
+                    (checkout.stderr or checkout.stdout or "").strip()
+                ))
+        else:
+            shutil.rmtree(str(destination), ignore_errors=True)
+            full = subprocess.run(
+                base, text=True, capture_output=True, timeout=timeout
+            )
+            if full.returncode != 0:
+                raise OSError("git clone 失败: {}".format(
+                    (full.stderr or full.stdout or "").strip()
+                ))
+        return _copy_payload(destination, log)
+
+
+def _download_tarball(urls, timeout: float, log) -> bytes:
+    errors = []
+    for url in urls:
+        request = urllib.request.Request(
+            url, headers={"User-Agent": "geo-academic-reader/{}".format(__version__)}
+        )
+        log("下载 {}".format(url))
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return response.read()
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            errors.append("{}: {}".format(url, exc))
+            log("下载失败，尝试下一个地址 ...")
+    raise OSError("；".join(errors) or "没有可用的下载地址")
 
 
 def _safe_extract(data: bytes, destination: Path) -> Path:
@@ -530,17 +588,35 @@ def update_workspace(
                 profile_before = PROFILE_PATH.read_text(encoding="utf-8")
             except Exception:
                 profile_before = None
-        url = TARBALL_URL.format(GITHUB_REPO, tag)
-        try:
-            data = _download_tarball(url, timeout=timeout, log=log)
-            with tempfile.TemporaryDirectory(prefix="geo-reader-update-") as temp:
-                root = _safe_extract(data, Path(temp))
-                copied = _copy_payload(root, log)
-        except Exception as exc:
-            result["error"] = "下载或解压更新包失败：{}".format(exc)
+        urls = [pattern.format(repo=GITHUB_REPO, tag=tag) for pattern in TARBALL_URLS]
+        copied = None
+        method = None
+        errors = []
+        if shutil.which("git"):
+            try:
+                copied = _clone_payload(tag, timeout=timeout, log=log)
+                method = "clone"
+            except Exception as exc:
+                errors.append("git clone: {}".format(exc))
+                log("git clone 失败（{}），改用源码包 ...".format(exc))
+        if copied is None:
+            try:
+                data = _download_tarball(urls, timeout=timeout, log=log)
+                with tempfile.TemporaryDirectory(prefix="geo-reader-update-") as temp:
+                    root = _safe_extract(data, Path(temp))
+                    copied = _copy_payload(root, log)
+                method = "tarball"
+            except Exception as exc:
+                errors.append("源码包: {}".format(exc))
+        if copied is None:
+            result["error"] = (
+                "下载更新包失败：{}\n"
+                "  手动更新：从 {} 下载源码包，解压后覆盖代码与文档；"
+                "不要删除 papers/、.raw/、.geo-reader/、input_pdfs/。"
+            ).format("；".join(errors), check.get("url") or RELEASE_URL.format(GITHUB_REPO, tag))
             return result
         result["updated"] = True
-        result["method"] = "tarball"
+        result["method"] = method
         result["copied"] = copied
 
     # --- verify that the user's data survived ----------------------------

@@ -1,6 +1,6 @@
 # geo-academic-reader
 
-[![Version](https://img.shields.io/badge/version-0.3.1-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
+[![Version](https://img.shields.io/badge/version-0.3.2-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-green.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
@@ -147,9 +147,13 @@ python3 main.py --update --dry-run          # 只预览目标版本
 python3 main.py --update                    # 更新，同时保留现有资料
 ```
 
-`--check-update` 读取 GitHub Releases，结果缓存 6 小时；访问不了 GitHub 时以退出码 0 结束，不会让一次正常的阅读任务失败。`--update` 在 git 仓库里使用 `git merge --ff-only <tag>`，没有 `.git` 时下载对应 tag 的源码包，只覆盖代码与文档，不会写入 `papers/`、`.raw/`、`.geo-reader/` 或 `input_pdfs/`。`.geo-reader/profile.json` 会先备份到 `.geo-reader/backups/`，异常时自动恢复。工作区有未提交的代码改动，或本地历史与上游分叉时，会拒绝更新而不是覆盖。只有明确要跟踪预发布时才加 `--prerelease`。
+`--check-update` 读取 GitHub Releases，结果缓存 6 小时；访问不了 GitHub 时以退出码 0 结束，不会让一次正常的阅读任务失败。`--update` 在 git 仓库里使用 `git merge --ff-only <tag>`；没有 `.git` 时先尝试浅克隆 + sparse checkout，失败再下载源码包。只覆盖代码与文档，不会写入 `papers/`、`.raw/`、`.geo-reader/` 或 `input_pdfs/`。`.geo-reader/profile.json` 会先备份到 `.geo-reader/backups/`，异常时自动恢复。工作区有未提交的代码改动，或本地历史与上游分叉时，会拒绝更新而不是覆盖。只有明确要跟踪预发布时才加 `--prerelease`。
 
 版本策略以小版本为主：修复、文档或小范围改进默认 `0.3.0 → 0.3.1`；新增能力默认升 minor，除非另有要求。
+
+> **一次性说明**
+>
+> 更新器本身从 0.3.1 起才存在。更早的副本需要先手动升级一次（`git pull --ff-only` 或重新下载）；之后的新版本都可以用 `--update`。
 
 ### 5. 预览
 

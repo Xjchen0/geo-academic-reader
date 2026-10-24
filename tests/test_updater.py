@@ -164,6 +164,7 @@ class UpdateFlowTests(unittest.TestCase):
                  mock.patch.object(updater, "PROFILE_PATH", profile), \
                  mock.patch.object(updater, "check_for_update", return_value=check), \
                  mock.patch.object(updater, "_git_available", return_value=False), \
+                 mock.patch.object(updater.shutil, "which", return_value=None), \
                  mock.patch.object(updater, "_download_tarball", return_value=self._tarball()):
                 result = updater.update_workspace(log=lambda *_a, **_k: None)
 
