@@ -6,72 +6,97 @@ The strategy is **browser-first, not selector-perfect**. The manifest is the sou
 
 ---
 
-## New-Article Watch: journal list, not topic search
+## New-Article Watch: open the journal pages, not topic search
 
-`python3 main.py --new-literature` answers “find new papers” **only from the configured journal list** (`journals.json`, or `.geo-reader/journals.json` when present). It never reads `papers/`, `.raw/`, or the conversation to choose a topic.
+`python3 main.py --new-literature` answers “find new papers” **only from the configured journal pages** (`journals.json`, or `.geo-reader/journals.json` when present). It never reads `papers/`, `.raw/`, or the conversation to choose a topic.
 
 The command is a listing step, not an extraction step:
 
-1. It writes `.geo-reader/journal-scan/latest.md` and `latest.json` with numbered candidates.
-2. The agent presents those candidates and stops.
-3. Only after the user names numbers or DOIs does the agent run `--doi` and write notes.
+1. Chrome/CDP opens each configured page (research articles, current issue, early publication, or recent volumes).
+2. A page-specific parser reads the entries the page itself lists.
+3. Each title is translated to Chinese (cache first, then Bing) and stored as `title_zh`.
+4. It writes `.geo-reader/journal-scan/latest.md` and `latest.json` with numbered candidates.
+5. The agent presents those candidates and stops.
+6. Only after the user names numbers or DOIs does the agent run `--doi` and write notes.
 
-### List schema
+### Page list schema (v2)
 
 ```json
 {
-  "version": 1,
-  "defaults": { "days": 7, "limit": 80, "sort": "date" },
-  "keyword_sets": {
-    "earth_planetary": ["earth*", "mantle*", "mars", "volcan*"]
-  },
+  "version": 2,
+  "defaults": { "days": 0, "limit": 0, "sort": "journal" },
   "journals": [
     {
-      "key": "nature-geoscience",
+      "key": "ngeo",
       "name": "Nature Geoscience",
-      "issn": "1752-0894",
-      "publisher": "Springer Nature",
+      "parser": "nature",
+      "url": "https://www.nature.com/ngeo/research-articles",
       "enabled": true,
-      "keyword_set": "earth_planetary",
-      "keywords": []
+      "wait": 5,
+      "scroll": false,
+      "ready": "h3.c-card__title"
+    },
+    {
+      "key": "epsl",
+      "name": "EPSL",
+      "parser": "epsl",
+      "url_template": "https://www.sciencedirect.com/journal/earth-and-planetary-science-letters/vol/{volume}/suppl/C",
+      "volumes": [699, 698, 697, 696],
+      "enabled": true,
+      "scroll": true,
+      "ready": "a.article-content-title"
     }
   ]
 }
 ```
 
-- `key` is the CLI identifier (`--journal nature-geoscience`), unique and lowercase.
-- `issn` is the Crossref journal ISSN; verify a new entry with `https://api.crossref.org/journals/<ISSN>`.
+- `key` is the CLI identifier (`--journal ngeo`), unique and lowercase.
+- `parser` selects the page parser; it must be one of the supported names below.
+- Supply either `url`, or `url_template` plus a non-empty `volumes` array containing `{volume}`.
 - `enabled: false` keeps an entry documented but out of the scan.
-- `keyword_set` refers to a shared list; `keywords` appends inline terms. A trailing `*` marks a stem (`volcan*`); everything else is a whole word (`mars` does not match “marsh”).
-- Keywords match the **title only** and are static configuration. They exist to keep broad journals (Nature, Science, PNAS, Nature Communications, Science Advances, Nature Astronomy) usable; specialist journals normally leave them empty.
+- `wait` is the post-load settle time (seconds). `scroll` scrolls to the bottom to trigger lazy loading. `ready` is a CSS selector the scanner waits for before reading the HTML. `challenge_timeout` defaults to 60 seconds.
+- `defaults.days: 0` means “take the page as it is”. A positive value filters only entries that have a date; undated items are kept. `limit: 0` means no cap.
 
-### Crossref queries
+### Parsers and pages
 
-Two queries per journal, merged by DOI:
+| parser | Page | Reads | Notes |
+| :--- | :--- | :--- | :--- |
+| `nature` | `nature.com/<journal>/research-articles` | `<article>` cards, `h3.c-card__title a`, `<time datetime>` | DOI is `10.1038/<article basename>` |
+| `science_first` | `science.org/toc/science/0/0` | `h4/h5.to-section` date groups + `h3.article-title a[href="/doi/…"]` | First Release |
+| `science_current` | `science.org/toc/science/current` | Same markup, only the “Research Articles” group | Skips news/comment |
+| `science_advances` | `science.org/toc/sciadv/current` | `card` blocks inside the “Earth, Environmental, Ecological, and Space Sciences” group | Skips other sections |
+| `epsl` | ScienceDirect volume page (`/vol/<n>/suppl/C`) | `a.anchor.article-content-title` + PII; DOI read from the surrounding block | Never invents a DOI from the PII |
+| `agu` | AGU journal page | Only the first pane containing `div.issue-item` (Recently Published) | Ignores Most Cited / Most Read |
+| `geology_current` | `pubs.geoscienceworld.org/geology/issue/current` | `h3.customLink.item-title a`; DOI from the PDF link code | `10.1130/<code>` |
+| `geology_early` | `/geology/early-publication` | `h2.al-subgroup-outer-id` date groups + `h5.al-title a` | Date comes from the group heading |
+| `gji` | `academic.oup.com/gji` | `div.widget-dynamic-entry.journalArticleItem`, `data-attribute` DOI, title div | Wait for the dynamic widget |
+| `pnas` | `pnas.org/topic/earth-sci` | Card blocks between “Recent articles” and “Trending” | Stops at Trending |
 
-| Query | Filter | Why |
-| :--- | :--- | :--- |
-| publication date | `from-pub-date` / `until-pub-date` | Catches Springer Nature and AGU records, whose `published` date tracks the online date |
-| creation date | `from-created-date` / `until-created-date` | Catches Elsevier records, whose issue date can be months ahead (a January issue deposited in October) |
+The shipped list covers 17 sections: Nature, Nature Geoscience, Nature Communications (two pages), Science First Release and Current, Science Advances, EPSL volumes 696–699, GRL, JGR-Solid Earth, JGR-Planets, Tectonics, G-Cubed, Geology current and early publication, GJI, and PNAS Earth.
 
-Both use `type:journal-article`. The scan paces requests globally (0.35 s), retries 429/5xx once, and runs at most three journals concurrently. A per-journal failure is reported in the output; it does not abort the rest.
+### Filtering and deduplication
 
-The displayed date is the online date when it is not in the future, otherwise the record creation date. That is why an Elsevier paper can show today's date even though its issue is dated next year.
+- Corrections, corrigenda, errata, retractions, expressions of concern, issue front/back matter and cover images are dropped before numbering.
+- Duplicate DOIs are collapsed globally; entries without a DOI are matched by normalised title.
+- There is **no keyword filter**. A broad journal (Nature, Science, PNAS) will list non-geoscience papers too; that is the definition of the user's list, so do not narrow it from the conversation.
+- `total_found` is the count after dedupe; `total` is the count after `--limit`.
 
-### What is filtered
+### Chinese titles
 
-- Corrections, corrigenda, errata, editorials, publisher's notes, retractions, expressions of concern, issue front/back matter, obituaries, book reviews, briefings, podcasts, and news & views.
-- Nature Portfolio `10.1038/d...` DOIs (news, comment, careers); research and reviews use `10.1038/s...`.
-- Magazine organisation names such as “Mineralogical Society of America” and “Société Française de Minéralogie et de Cristallographie”.
-- Duplicate DOIs and duplicate normalised titles across journals.
-
-Everything else is kept and shown. A broad journal can still contribute an opinion piece that Crossref types as `journal-article`; the list is for human selection, so do not silently narrow it further.
+- `scripts/translate.py` translates each English title with Bing's public translator (`cn.bing.com`, `ttranslatev3` + abuse-prevention token). Google is unreachable from mainland networks; MyMemory's free quota is too small for a 300-item scan.
+- Results live in `.geo-reader/journal-scan/translations.json` (`{version, provider, updated_at, titles: {english: chinese}}`). A rerun reuses the cache and only translates new titles.
+- The cache stores the **raw** machine output; `TERM_FIXES` applies a geoscience glossary on read, so correcting a term does not require clearing the cache. Current rules include fugacity→逸度, sub-arc→弧下, back-arc→弧后, magma ocean→岩浆洋, stagnant slab→停滞板片, delamination→拆沉, large igneous province→大火成岩省, flood basalt→溢流玄武岩, mid-ocean ridge→洋中脊, conductance→电导.
+- `latest.md` labels the block “中文（机译），仅供检索” and the English title stays authoritative. A title that could not be translated is printed as “暂缺” with a count in the header; the scan never invents one. `--no-translate` skips the step entirely.
+- Titles containing escaped inline markup (`NH&lt;sub&gt;4&lt;/sub&gt;`) are unescaped **before** tags are stripped, so the cache key and the displayed title are the clean text.
+- Translation failures are non-fatal: the scan still writes the list and records `translation` (`provider`, `cached`, `translated`, `missing`, `error`) in `latest.json`.
 
 ### Limits and blind spots
 
-- Crossref lag: a paper visible on the publisher page today may appear in Crossref a day or more later. Rerun the scan; do not switch to scraping a single TOC to “fill the gap” without telling the user.
-- `limit` is a global cap, but selection is round-robin across journals so a high-volume journal cannot hide the specialist ones. `total_found` reports the untruncated count.
-- The list is a candidate list, not a completeness claim. Say so when presenting it.
+- The page decides what “latest” means. A research-articles page may contain papers from the past several weeks; a volume page contains the whole issue. This is intentional.
+- EPSL is configured by volume. When a new volume opens, update `volumes`; otherwise the scan silently keeps showing old issues.
+- Cloudflare or a human check: the scanner waits politely, reports `challenge`, and stops. It does not refresh or retry in a loop. Ask the user to finish the check in the opened Chrome window, then rerun the same command.
+- If a publisher changes markup, the parser returns 0 for that page. Report it; never fabricate entries.
+- Pages are fetched sequentially to stay polite. A full scan of 20 pages typically takes a few minutes.
 
 Detailed extractor behaviour follows.
 

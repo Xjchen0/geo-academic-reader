@@ -105,12 +105,16 @@ def print_guide(profile: Optional[dict] = None) -> None:
    想修改时说：重新设置偏好。
 
 1) 找新文献（只列清单，等待你选择）
-   python3 main.py --new-literature --days 7
-   python3 main.py --new-literature --days 14 --journal epsl --journal gca
+   python3 main.py --new-literature
+   python3 main.py --new-literature --journal epsl --journal geology_early
    python3 main.py --journals-init     # 生成可编辑的个人期刊清单
 
-   扫描 journals.json（个人副本 .geo-reader/journals.json 优先）里的期刊，
-   把候选写成 .geo-reader/journal-scan/latest.md，并打印编号列表。
+   用 Chrome 打开 journals.json（个人副本 .geo-reader/journals.json 优先）里的
+   期刊页面，按页面列出的条目抓标题、DOI 和日期，并给每条附上中文机译标题，
+   写成 .geo-reader/journal-scan/latest.md，并打印编号列表。
+   中文标题仅供检索，英文原题为准；缓存见 .geo-reader/journal-scan/translations.json。
+   默认 --days 0：页面列出什么就列什么；--days 3 才按日期过滤；
+   --no-translate 只列英文。
    这一步不会抽取证据包；Agent 必须等你回复编号或 DOI 后再精读。
 
 2) 抽取证据包（脚本只产出证据，不写综述）

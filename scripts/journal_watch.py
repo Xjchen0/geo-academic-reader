@@ -1,35 +1,31 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Journal new-literature watch: list candidates, never extract them.
+"""Journal new-literature watch: scrape the configured publisher pages.
 
-The workflow this module supports is deliberately two-stage:
+The workflow is deliberately two-stage:
 
-1. ``scan`` reads the configured journal list (``journals.json`` or the user
-   copy in ``.geo-reader/journals.json``), asks Crossref for each journal's
-   recent records, and writes a numbered candidate list.
+1. ``scan`` opens each configured journal page in Chrome, parses the article
+   list that the publisher shows (research articles, current issue, early
+   publication), and writes a numbered candidate list.
 2. The agent presents that list and waits. Evidence extraction starts only
    after the user names the numbers they want.
 
-There is no topic search and no inference from existing notes. The only
-inputs are the journal list, the date window and the enable flags the user
-configured.
+The journal list and parsers follow the user's own workflow in
+``/Users/xjchen/work/gongzhonghao2`` (``fetch_journals_*.js`` and
+``gen_md_*.py``). There is no topic search, no OpenAlex query and no
+inference from existing notes.
 """
 
 import datetime
 import html
 import json
 import re
-import threading
-import time
-from concurrent.futures import ThreadPoolExecutor
-from functools import lru_cache
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
+from urllib.parse import urljoin, urlparse
 
-import requests
-
-from .config import GUIDE_DIR, PROJECT_ROOT, load_profile
-from .version import __version__
+from .browser import BrowserChallenge, BrowserSession, ensure_chrome
+from .config import GUIDE_DIR, PROJECT_ROOT
 
 DEFAULT_JOURNALS_PATH = PROJECT_ROOT / "journals.json"
 USER_JOURNALS_PATH = GUIDE_DIR / "journals.json"
@@ -37,56 +33,30 @@ SCAN_DIR = GUIDE_DIR / "journal-scan"
 LATEST_MD = SCAN_DIR / "latest.md"
 LATEST_JSON = SCAN_DIR / "latest.json"
 
-CROSSREF_JOURNAL_URL = "https://api.crossref.org/journals/{issn}/works"
-SELECT_FIELDS = (
-    "DOI,title,container-title,published,published-online,published-print,"
-    "issued,created,author,abstract,type,URL"
-)
-USER_AGENT = (
-    "geo-academic-reader/{version} "
-    "(+https://github.com/Xjchen0/geo-academic-reader)"
-).format(version=__version__)
-
-# Records that are not research articles. They are dropped rather than shown,
-# because a correction or an editorial is never a reading candidate.
-NOISE_TITLE_RE = re.compile(
-    r"^\s*(?:(?:author|publisher)\s+)?"
-    r"(?:correction|corrigendum|erratum|editorial|editor'?s note|"
-    r"publisher'?s note|retraction|expression of concern|in this issue|"
-    r"issue information|front matter|back matter|cover image|"
-    r"table of contents|preface|foreword|obituary|book review|"
-    r"daily briefing|briefing chat|podcast|research highlights?|"
-    r"news & views|editorial board)\b",
-    re.IGNORECASE,
-)
-# Nature Portfolio uses 10.1038/d... for news, comment and careers content;
-# research and reviews use 10.1038/s.... Dropping the d-series keeps the list
-# to primary literature without guessing from the title.
-NOISE_DOI_RE = re.compile(r"^10\.1038/d\d", re.IGNORECASE)
-COMMENTARY_RE = re.compile(
-    r"\b(?:comment on|reply to|response to|matters arising|correspondence|"
-    r"commentary)\b",
-    re.IGNORECASE,
-)
-# Magazine front matter such as "Mineralogical Society of America" or
-# "Sociedad Española de Mineralogía" is deposited as a journal-article by
-# some publishers. A title counts as an organisation only when it contains an
-# organisation word and every other word is capitalised or a connector, so
-# "Association between mantle temperature and volcanism" stays a paper.
-ORG_TOKEN_RE = re.compile(
-    r"\b(?:Society|Association|Union|Academy|Institute|Sociedad|Société|"
-    r"Società|Gesellschaft|Associazione|Sociedade|Mineralogía|Mineralogie)\b"
-)
-ORG_CONNECTORS = {
-    "of", "the", "and", "for", "de", "la", "del", "et", "des", "du", "der",
-    "di", "e", "y", "van", "von", "&",
+MONTHS = {
+    "jan": 1, "january": 1,
+    "feb": 2, "february": 2,
+    "mar": 3, "march": 3,
+    "apr": 4, "april": 4,
+    "may": 5,
+    "jun": 6, "june": 6,
+    "jul": 7, "july": 7,
+    "aug": 8, "august": 8,
+    "sep": 9, "sept": 9, "september": 9,
+    "oct": 10, "october": 10,
+    "nov": 11, "november": 11,
+    "dec": 12, "december": 12,
 }
 
-# Crossref rate limits are shared per IP. Space requests globally so a small
-# thread pool does not turn into a burst of 429s.
-_RATE_LOCK = threading.Lock()
-_LAST_REQUEST = [0.0]
-MIN_REQUEST_INTERVAL = 0.35
+# Only unmistakable non-research records are dropped. Commentaries, brief
+# reports and replies stay: the user may want to read or compare them.
+NOISE_TITLE_RE = re.compile(
+    r"^\s*(?:(?:author|publisher)\s+)?"
+    r"(?:correction|corrigendum|erratum|retraction|expression of concern|"
+    r"issue information|front matter|back matter|cover image|"
+    r"table of contents)\b",
+    re.IGNORECASE,
+)
 
 
 class JournalConfigError(Exception):
@@ -97,17 +67,410 @@ class ScanError(Exception):
     """The scan could not run at all (configuration or argument problem)."""
 
 
+# ---------------------------------------------------------------------------
+# HTML helpers
+# ---------------------------------------------------------------------------
+
+
+def _clean(fragment) -> str:
+    """Strip tags, MathML wrappers and entities, then collapse whitespace.
+
+    Unescape first: several publishers put escaped markup in title attributes
+    (``&lt;i&gt;P&lt;/i&gt;-Wave``), which would otherwise survive the tag
+    removal and reach the list as literal HTML.
+    """
+    if fragment is None:
+        return ""
+    text = html.unescape(str(fragment))
+    text = re.sub(r"<script.*?</script>", " ", text, flags=re.S | re.I)
+    text = re.sub(r"<svg.*?</svg>", " ", text, flags=re.S | re.I)
+    text = re.sub(r"<style.*?</style>", " ", text, flags=re.S | re.I)
+    text = re.sub(
+        r"<msub><mi>([A-Za-z]+)</mi><mn>(\d+)</mn></msub>", r"\1\2", text
+    )
+    text = re.sub(
+        r"<msubsup><mi>([A-Za-z]+)</mi><mn>(\d+)</mn><mi>([A-Za-z]+)</mi></msubsup>",
+        r"\1\2\3",
+        text,
+    )
+    text = re.sub(r"<[^>]+>", "", text)
+    text = text.replace("\u00a0", " ").replace("&nbsp;", " ")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _absolute(base_url: str, href: str) -> str:
+    href = (href or "").strip()
+    if not href:
+        return ""
+    if href.startswith("http://") or href.startswith("https://"):
+        return href
+    return urljoin(base_url, href)
+
+
+def _valid_date(year, month, day) -> str:
+    try:
+        return datetime.date(int(year), int(month), int(day)).isoformat()
+    except (TypeError, ValueError):
+        return ""
+
+
+def _parse_date(value) -> str:
+    """Return ``YYYY-MM-DD`` for a publisher date string, else ``""``."""
+    text = _clean(value)
+    if not text:
+        return ""
+
+    match = re.search(r"(\d{4})-(\d{2})-(\d{2})", text)
+    if match:
+        return _valid_date(match.group(1), match.group(2), match.group(3))
+
+    month_names = (
+        r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+        r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|"
+        r"Nov(?:ember)?|Dec(?:ember)?"
+    )
+    match = re.search(
+        r"\b(\d{1,2})\s+(" + month_names + r"),?\s+(\d{4})",
+        text,
+        re.IGNORECASE,
+    )
+    if match:
+        month = MONTHS.get(match.group(2).lower())
+        if month:
+            return _valid_date(match.group(3), month, match.group(1))
+
+    match = re.search(
+        r"\b(" + month_names + r")\s+(\d{1,2}),?\s+(\d{4})",
+        text,
+        re.IGNORECASE,
+    )
+    if match:
+        month = MONTHS.get(match.group(1).lower())
+        if month:
+            return _valid_date(match.group(3), month, match.group(2))
+    return ""
+
+
+def _normalise_title(title: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", (title or "").lower()).strip()
+
+
+def _is_noise(title: str) -> bool:
+    return bool(NOISE_TITLE_RE.match(title or ""))
+
+
+def _doi_from_path(path: str) -> str:
+    """``/articles/s41586-026-11207-x`` -> ``10.1038/s41586-026-11207-x``."""
+    match = re.search(r"/articles/([A-Za-z0-9._-]+)/?$", path or "")
+    if not match:
+        return ""
+    name = match.group(1)
+    if name.startswith("s") and re.search(r"\d", name):
+        return "10.1038/" + name
+    return ""
+
+
+def _item(title, url, date="", doi="", kind="") -> Optional[dict]:
+    title = _clean(title)
+    if not title or _is_noise(title):
+        return None
+    iso = _parse_date(date)
+    return {
+        "title": title,
+        "url": url,
+        "doi": (doi or "").strip().lower(),
+        "date": iso or _clean(date),
+        "sort_date": iso,
+        "kind": _clean(kind),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Page parsers (ported from gen_md_*.py in the reference workspace)
+# ---------------------------------------------------------------------------
+
+NATURE_TITLE_RE = re.compile(
+    r'<h3[^>]*class="c-card__title"[^>]*>.*?<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
+    re.S,
+)
+NATURE_TIME_RE = re.compile(r'<time[^>]*datetime="([^"]+)"')
+
+SCIENCE_SECTION_RE = re.compile(
+    r'<h[45][^>]*class="[^"]*to-section[^"]*"[^>]*>(.*?)</h[45]>', re.S
+)
+SCIENCE_TITLE_RE = re.compile(
+    r'<h3[^>]*class="[^"]*article-title[^"]*"[^>]*>.*?'
+    r'<a[^>]*href="(/doi/([^"]+))"[^>]*>(.*?)</a>',
+    re.S,
+)
+
+
+def parse_nature(page: str, base_url: str) -> List[dict]:
+    items = []
+    for block in re.findall(r"<article[^>]*>.*?</article>", page, re.S):
+        match = NATURE_TITLE_RE.search(block)
+        if not match:
+            continue
+        href = match.group(1)
+        date_match = NATURE_TIME_RE.search(block)
+        entry = _item(
+            match.group(2),
+            _absolute(base_url, href),
+            date_match.group(1) if date_match else "",
+            _doi_from_path(urlparse(href).path),
+        )
+        if entry:
+            items.append(entry)
+    return items
+
+
+def _science_sections(page: str) -> List[Tuple[str, str]]:
+    matches = list(SCIENCE_SECTION_RE.finditer(page))
+    sections = []
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(page)
+        sections.append((_clean(match.group(1)), page[match.end():end]))
+    return sections
+
+
+def _parse_science_segment(segment: str, base_url: str, date: str) -> List[dict]:
+    items = []
+    for match in SCIENCE_TITLE_RE.finditer(segment):
+        entry = _item(
+            match.group(3),
+            _absolute(base_url, match.group(1)),
+            date,
+            match.group(2),
+        )
+        if entry:
+            items.append(entry)
+    return items
+
+
+def parse_science_first(page: str, base_url: str) -> List[dict]:
+    items = []
+    for heading, segment in _science_sections(page):
+        items.extend(_parse_science_segment(segment, base_url, heading))
+    return items
+
+
+def parse_science_current(page: str, base_url: str) -> List[dict]:
+    for heading, segment in _science_sections(page):
+        if "research article" in heading.lower():
+            return _parse_science_segment(segment, base_url, "")
+    return []
+
+
+def parse_science_advances(page: str, base_url: str) -> List[dict]:
+    selected = None
+    for heading, segment in _science_sections(page):
+        if "earth" in heading.lower():
+            selected = segment
+            break
+    if selected is None:
+        return []
+
+    items = []
+    cards = re.split(r'<div class="card(?=[" ])', selected)[1:]
+    for card in cards:
+        match = SCIENCE_TITLE_RE.search(card)
+        if not match:
+            continue
+        time_match = re.search(r"<time[^>]*>(.*?)</time>", card, re.S)
+        entry = _item(
+            match.group(3),
+            _absolute(base_url, match.group(1)),
+            time_match.group(1) if time_match else "",
+            match.group(2),
+        )
+        if entry:
+            items.append(entry)
+    return items
+
+
+EPSL_TITLE_RE = re.compile(
+    r'<a class="anchor article-content-title[^"]*"\s+'
+    r'href="/science/article/pii/([A-Z0-9]+)"[^>]*>(.*?)</a>',
+    re.S,
+)
+EPSL_DOI_RE = re.compile(r"https://doi\.org/(10\.1016/j\.epsl\.\d+\.\d+)")
+
+
+def parse_epsl(page: str, base_url: str) -> List[dict]:
+    items = []
+    for match in EPSL_TITLE_RE.finditer(page):
+        pii = match.group(1)
+        # The DOI sits near the title link on ScienceDirect, but not always
+        # inside the anchor. Read it from the surrounding block instead of
+        # inventing one from the PII.
+        chunk = page[max(0, match.start() - 400): match.end() + 400]
+        doi_match = EPSL_DOI_RE.search(chunk)
+        entry = _item(
+            match.group(2),
+            _absolute(base_url, "/science/article/pii/" + pii),
+            "",
+            doi_match.group(1) if doi_match else "",
+        )
+        if entry:
+            items.append(entry)
+    return items
+
+
+def parse_agu(page: str, base_url: str) -> List[dict]:
+    """AGU pages render Recently Published / Most Cited / Most Read panes."""
+    panes = re.split(r'<div id="pane-[^"]+"', page)[1:]
+    body = next((pane for pane in panes if '<div class="issue-item"' in pane), "")
+    if not body:
+        return []
+
+    items = []
+    for block in re.split(r'<div class="issue-item"', body)[1:]:
+        doi_match = re.search(r"/doi/(10\.\d{4}/[A-Za-z0-9.]+)", block)
+        title_match = re.search(
+            r'<a href="/doi/[^"]+" title="([^"]+)" class="issue-item__title', block
+        )
+        if not (doi_match and title_match):
+            continue
+        date_match = re.search(
+            r"First Published:</label><span[^>]*>\s*&nbsp;([^<]+)", block
+        )
+        entry = _item(
+            title_match.group(1),
+            "https://doi.org/" + doi_match.group(1),
+            date_match.group(1) if date_match else "",
+            doi_match.group(1),
+        )
+        if entry:
+            items.append(entry)
+    return items
+
+
+def parse_geology_current(page: str, base_url: str) -> List[dict]:
+    items = []
+    for match in re.finditer(
+        r'<h3 class="customLink item-title"[^>]*>\s*'
+        r'<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
+        page,
+        re.S,
+    ):
+        chunk = page[match.start(): match.start() + 8000]
+        pdf_match = re.search(
+            r'article-pdf/[^"]*?/([A-Za-z0-9]+\.\d+)\.pdf', chunk
+        )
+        doi = "10.1130/" + pdf_match.group(1) if pdf_match else ""
+        entry = _item(
+            match.group(2), _absolute(base_url, match.group(1)), "", doi
+        )
+        if entry:
+            items.append(entry)
+    return items
+
+
+def parse_geology_early(page: str, base_url: str) -> List[dict]:
+    groups = list(
+        re.finditer(
+            r'<h2[^>]*class="[^"]*al-subgroup-outer-id[^"]*"[^>]*>(.*?)</h2>',
+            page,
+            re.S,
+        )
+    )
+    items = []
+    for index, group in enumerate(groups):
+        date = group.group(1)
+        end = groups[index + 1].start() if index + 1 < len(groups) else len(page)
+        segment = page[group.end():end]
+        for match in re.finditer(
+            r'<h5 class="al-title">\s*<a href="[^"]*/doi/'
+            r'(10\.1130/[^"/]+)[^"]*"[^>]*>(.*?)</a>',
+            segment,
+            re.S,
+        ):
+            entry = _item(
+                match.group(2),
+                "https://doi.org/" + match.group(1),
+                date,
+                match.group(1),
+            )
+            if entry:
+                items.append(entry)
+    return items
+
+
+def parse_gji(page: str, base_url: str) -> List[dict]:
+    items = []
+    for block in re.split(
+        r'<div class="widget-dynamic-entry journalArticleItem', page
+    )[1:]:
+        doi_match = re.search(r'data-attribute="(10\.1093/gji/[A-Za-z0-9]+)"', block)
+        title_match = re.search(
+            r'<div class="widget-dynamic-journal-title"[^>]*>(.*?)</div>',
+            block,
+            re.S,
+        )
+        if not (doi_match and title_match):
+            continue
+        entry = _item(
+            title_match.group(1),
+            "https://doi.org/" + doi_match.group(1),
+            "",
+            doi_match.group(1),
+        )
+        if entry:
+            items.append(entry)
+    return items
+
+
+def parse_pnas(page: str, base_url: str) -> List[dict]:
+    recent = page.find("Recent articles")
+    trending = page.find("Trending", recent) if recent >= 0 else -1
+    segment = page[recent:trending] if recent >= 0 and trending > recent else page
+
+    items = []
+    for card in re.split(r'<div class="card(?=[" ])', segment)[1:]:
+        match = re.search(
+            r'<a href="(/doi/10\.1073/pnas\.[^"]+)" title="([^"]*)"', card
+        )
+        if not match:
+            continue
+        kind_match = re.search(r'card__meta__type">(.*?)</a>', card, re.S)
+        date_match = re.search(r'card__meta__date">([^<]+)<', card)
+        entry = _item(
+            match.group(2),
+            _absolute(base_url, match.group(1)),
+            date_match.group(1) if date_match else "",
+            match.group(1)[len("/doi/"):],
+            kind_match.group(1) if kind_match else "",
+        )
+        if entry:
+            items.append(entry)
+    return items
+
+
+PARSERS = {
+    "nature": parse_nature,
+    "science_first": parse_science_first,
+    "science_current": parse_science_current,
+    "science_advances": parse_science_advances,
+    "epsl": parse_epsl,
+    "agu": parse_agu,
+    "geology_current": parse_geology_current,
+    "geology_early": parse_geology_early,
+    "gji": parse_gji,
+    "pnas": parse_pnas,
+}
+
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+
 def config_path() -> Path:
     """User copy wins; the shipped list is the fallback."""
     return USER_JOURNALS_PATH if USER_JOURNALS_PATH.is_file() else DEFAULT_JOURNALS_PATH
 
 
 def load_config(path: Optional[Path] = None) -> dict:
-    """Load and validate the journal list.
-
-    Raises ``JournalConfigError`` with an actionable message instead of
-    silently scanning nothing.
-    """
     target = Path(path) if path else config_path()
     if not target.is_file():
         raise JournalConfigError(
@@ -125,74 +488,110 @@ def load_config(path: Optional[Path] = None) -> dict:
     if not isinstance(journals, list) or not journals:
         raise JournalConfigError("期刊清单缺少非空的 journals 数组：{}".format(target))
 
-    keyword_sets = payload.get("keyword_sets") or {}
-    if not isinstance(keyword_sets, dict):
-        raise JournalConfigError("keyword_sets 必须是对象：{}".format(target))
+    # 0.3.3 shipped an ISSN/Crossref list. The page scanner cannot use it, and
+    # silently ignoring a user copy would be worse than stopping.
+    if any(
+        isinstance(raw, dict) and raw.get("issn") and not raw.get("parser")
+        for raw in journals
+    ):
+        raise JournalConfigError(
+            "期刊清单还是旧版 ISSN/Crossref 格式（v1），当前版本改为抓取期刊页面。"
+            "请先备份 {}，再运行 python3 main.py --journals-init --force "
+            "生成新的页面清单。".format(target)
+        )
 
     seen_keys = set()
-    seen_issns = set()
     normalised = []
     for raw in journals:
         if not isinstance(raw, dict):
             raise JournalConfigError("journals 中的每一项必须是对象：{!r}".format(raw))
         key = str(raw.get("key") or "").strip()
-        issn = str(raw.get("issn") or "").strip().upper()
         name = str(raw.get("name") or "").strip()
-        if not key or not issn or not name:
+        parser = str(raw.get("parser") or "").strip()
+        if not key or not name or not parser:
             raise JournalConfigError(
-                "期刊条目必须同时有 key、name、issn：{!r}".format(raw)
+                "期刊条目必须同时有 key、name、parser：{!r}".format(raw)
             )
-        if not re.match(r"^\d{4}-?\d{3}[\dX]$", issn):
-            raise JournalConfigError("ISSN 格式不正确：{}（{}）".format(issn, key))
         if not re.match(r"^[a-z0-9][a-z0-9._-]*$", key):
             raise JournalConfigError(
                 "key 只能使用小写字母、数字、点、下划线和连字符：{}".format(key)
             )
         if key in seen_keys:
             raise JournalConfigError("期刊 key 重复：{}".format(key))
-        if issn in seen_issns:
-            raise JournalConfigError("期刊 ISSN 重复：{}（{}）".format(issn, key))
-        seen_keys.add(key)
-        seen_issns.add(issn)
-
-        set_name = raw.get("keyword_set")
-        keywords = list(raw.get("keywords") or [])
-        if set_name:
-            if set_name not in keyword_sets:
-                raise JournalConfigError(
-                    "期刊 {} 引用了不存在的 keyword_set：{}".format(key, set_name)
+        if parser not in PARSERS:
+            raise JournalConfigError(
+                "期刊 {} 的 parser 不存在：{}（可用：{}）".format(
+                    key, parser, ", ".join(sorted(PARSERS))
                 )
-            keywords.extend(keyword_sets[set_name] or [])
-        keywords = [str(word).strip() for word in keywords if str(word).strip()]
+            )
 
+        url = str(raw.get("url") or "").strip()
+        template = str(raw.get("url_template") or "").strip()
+        volumes = raw.get("volumes") or []
+        if url and template:
+            raise JournalConfigError(
+                "期刊 {} 只能配置 url 或 url_template 之一".format(key)
+            )
+        if not url and not template:
+            raise JournalConfigError("期刊 {} 缺少 url 或 url_template".format(key))
+        if url and not re.match(r"^https?://", url):
+            raise JournalConfigError("期刊 {} 的 url 必须是 http(s) 地址".format(key))
+        if template:
+            if not isinstance(volumes, list) or not volumes:
+                raise JournalConfigError(
+                    "期刊 {} 使用 url_template 时必须给出 volumes 数组".format(key)
+                )
+            try:
+                volumes = [int(volume) for volume in volumes]
+            except (TypeError, ValueError):
+                raise JournalConfigError(
+                    "期刊 {} 的 volumes 必须是整数数组".format(key)
+                )
+            if "{volume}" not in template:
+                raise JournalConfigError(
+                    "期刊 {} 的 url_template 必须包含 {{volume}}".format(key)
+                )
+
+        seen_keys.add(key)
         normalised.append(
             {
                 "key": key,
                 "name": name,
-                "issn": issn,
-                "publisher": str(raw.get("publisher") or ""),
+                "parser": parser,
+                "url": url,
+                "url_template": template,
+                "volumes": volumes,
                 "enabled": bool(raw.get("enabled", True)),
-                "keywords": keywords,
+                "wait": float(raw.get("wait", 5.0)),
+                "challenge_timeout": int(raw.get("challenge_timeout", 60)),
+                "scroll": bool(raw.get("scroll", False)),
+                "ready": str(raw.get("ready") or ""),
             }
         )
 
     defaults = payload.get("defaults") or {}
     if not isinstance(defaults, dict):
         defaults = {}
+    try:
+        days = int(defaults.get("days", 0))
+        limit = int(defaults.get("limit", 0))
+    except (TypeError, ValueError):
+        raise JournalConfigError("defaults 的 days / limit 必须是整数")
+    sort = str(defaults.get("sort", "journal"))
+    if days < 0 or limit < 0:
+        raise JournalConfigError("defaults 的 days / limit 不能为负数")
+    if sort not in ("journal", "date"):
+        raise JournalConfigError("defaults 的 sort 只能是 journal 或 date")
+
     return {
-        "version": payload.get("version", 1),
+        "version": payload.get("version", 2),
         "path": str(target),
-        "defaults": {
-            "days": int(defaults.get("days", 7)),
-            "limit": int(defaults.get("limit", 80)),
-            "sort": str(defaults.get("sort", "date")),
-        },
+        "defaults": {"days": days, "limit": limit, "sort": sort},
         "journals": normalised,
     }
 
 
 def init_user_config(force: bool = False) -> dict:
-    """Copy the shipped list to ``.geo-reader/journals.json`` for editing."""
     if USER_JOURNALS_PATH.exists() and not force:
         return {
             "path": str(USER_JOURNALS_PATH),
@@ -208,270 +607,39 @@ def init_user_config(force: bool = False) -> dict:
     return {
         "path": str(USER_JOURNALS_PATH),
         "created": True,
-        "message": "已生成个人期刊清单；修改 enabled / keywords / defaults 后重新扫描即可。",
+        "message": "已生成个人期刊清单；修改 journals 中的 url / enabled 后重新扫描。",
     }
 
 
-def _clean(text) -> str:
-    if isinstance(text, list):
-        text = text[0] if text else ""
-    text = str(text or "")
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = html.unescape(text)
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def _date_parts(item: dict, key: str) -> Optional[List[int]]:
-    block = item.get(key)
-    if not isinstance(block, dict):
-        return None
-    parts = block.get("date-parts")
-    if not isinstance(parts, list) or not parts or not isinstance(parts[0], list):
-        return None
-    values = [int(part) for part in parts[0][:3] if isinstance(part, int)]
-    return values or None
-
-
-def _date_str(parts: Optional[List[int]]) -> Optional[str]:
-    if not parts:
-        return None
-    if len(parts) == 1:
-        return "{:04d}".format(parts[0])
-    if len(parts) == 2:
-        return "{:04d}-{:02d}".format(parts[0], parts[1])
-    return "{:04d}-{:02d}-{:02d}".format(parts[0], parts[1], parts[2])
-
-
-def _sort_date(parts: Optional[List[int]]) -> Optional[str]:
-    """Pad month/year precision so string comparison stays chronological."""
-    if not parts:
-        return None
-    year = parts[0]
-    month = parts[1] if len(parts) > 1 else 1
-    day = parts[2] if len(parts) > 2 else 1
-    return "{:04d}-{:02d}-{:02d}".format(year, month, day)
-
-
-def _best_date(item: dict, today: datetime.date) -> Tuple[Optional[str], Optional[str]]:
-    """Return ``(display, sortable)`` for the most useful recent date.
-
-    Crossref's ``published``/``issued`` is the issue date for many Elsevier
-    journals, which can lie months in the future (e.g. a January issue
-    deposited in October). When that happens we fall back to the record
-    creation date so the list reflects when the paper actually appeared.
-    """
-    today_str = today.isoformat()
-    candidates = [
-        _date_parts(item, "published-online"),
-        _date_parts(item, "published"),
-        _date_parts(item, "issued"),
-        _date_parts(item, "published-print"),
+def page_urls(entry: dict) -> List[str]:
+    if entry.get("url"):
+        return [entry["url"]]
+    return [
+        entry["url_template"].format(volume=volume)
+        for volume in entry.get("volumes") or []
     ]
-    for parts in candidates:
-        sortable = _sort_date(parts)
-        if sortable and sortable <= today_str:
-            return _date_str(parts), sortable
-    created = str((item.get("created") or {}).get("date-time") or "")[:10]
-    if re.match(r"^\d{4}-\d{2}-\d{2}$", created):
-        return created, created
-    for parts in candidates:
-        if _sort_date(parts):
-            return _date_str(parts), _sort_date(parts)
-    return None, None
 
 
-def _doi(item: dict) -> str:
-    return str(item.get("DOI") or "").strip().lower()
+# ---------------------------------------------------------------------------
+# Fetching and scanning
+# ---------------------------------------------------------------------------
 
 
-def _title(item: dict) -> str:
-    return _clean(item.get("title"))
+def _fetch_page(entry: dict, url: str) -> str:
+    """Open one page in the user's Chrome and return rendered HTML.
 
-
-def _abstract(item: dict) -> str:
-    return _clean(item.get("abstract"))
-
-
-def _first_author(item: dict) -> str:
-    authors = item.get("author")
-    if not isinstance(authors, list) or not authors:
-        return ""
-    first = authors[0] or {}
-    family = _clean(first.get("family"))
-    given = _clean(first.get("given"))
-    if family and given:
-        return "{} {}".format(given, family)
-    return family or _clean(first.get("name"))
-
-
-@lru_cache(maxsize=4096)
-def _keyword_pattern(word: str) -> "re.Pattern":
-    # A trailing ``*`` marks an explicit stem ("volcan*", "geochem*").
-    # Everything else is a whole word, so "mars" no longer matches "marsh"
-    # and "core" no longer matches "score".
-    word = word.strip()
-    if word.endswith("*"):
-        return re.compile(r"\b" + re.escape(word[:-1]), re.IGNORECASE)
-    return re.compile(r"\b" + re.escape(word) + r"\b", re.IGNORECASE)
-
-
-def _matches_keywords(item: dict, keywords: Sequence[str]) -> bool:
-    """Match the configured keywords against the title only.
-
-    Titles are the stable, comparable field. Matching abstracts pulled in
-    unrelated biology and medicine papers from broad journals ("core" in
-    "core genome", "score", and so on), which defeats the purpose of the
-    journal list. Keywords are configured by the user, never derived from
-    the conversation.
+    No retry loop: a Cloudflare challenge must be completed by the user in the
+    visible window, and refreshing again can make the challenge worse.
     """
-    if not keywords:
-        return True
-    title = _title(item)
-    return any(_keyword_pattern(word).search(title) for word in keywords)
-
-
-def _looks_like_org(title: str) -> bool:
-    if not ORG_TOKEN_RE.search(title):
-        return False
-    words = re.findall(r"[^\s]+", title)
-    for word in words:
-        clean = word.strip(".,;:()")
-        if not clean:
-            continue
-        if clean.lower() in ORG_CONNECTORS:
-            continue
-        if clean[0].isupper():
-            continue
-        return False
-    return True
-
-
-def _is_noise(title: str) -> bool:
-    return bool(NOISE_TITLE_RE.match(title) or _looks_like_org(title))
-
-
-def _pace() -> None:
-    with _RATE_LOCK:
-        wait = MIN_REQUEST_INTERVAL - (time.monotonic() - _LAST_REQUEST[0])
-        if wait > 0:
-            time.sleep(wait)
-        _LAST_REQUEST[0] = time.monotonic()
-
-
-def _kind(title: str) -> str:
-    return "commentary" if COMMENTARY_RE.search(title) else "article"
-
-
-def _normalise_title(title: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
-
-
-def _headers() -> Dict[str, str]:
-    return {"User-Agent": USER_AGENT, "Accept": "application/json"}
-
-
-def _request(url: str, params: dict, timeout: float = 25.0) -> dict:
-    last_error = None
-    for attempt in range(2):
-        _pace()
-        try:
-            response = requests.get(url, params=params, headers=_headers(), timeout=timeout)
-            if response.status_code == 429 and attempt == 0:
-                try:
-                    delay = float(response.headers.get("Retry-After", "5"))
-                except (TypeError, ValueError):
-                    delay = 5.0
-                last_error = "HTTP 429"
-                time.sleep(max(3.0, min(delay, 15.0)))
-                continue
-            if response.status_code in (500, 502, 503, 504) and attempt == 0:
-                last_error = "HTTP {}".format(response.status_code)
-                time.sleep(2.0)
-                continue
-            response.raise_for_status()
-            return response.json()
-        except Exception as exc:  # network/JSON errors are reported, not raised
-            last_error = str(exc)
-            if attempt == 0:
-                time.sleep(1.0)
-    raise ScanError(str(last_error or "unknown error"))
-
-
-_SORT_FIELDS = {"from-pub-date": "published", "from-created-date": "created"}
-
-
-def _fetch_query(
-    entry: dict, since: str, until: str, date_filter: str, rows: int, mailto: str
-) -> List[dict]:
-    params = {
-        "filter": "{0}:{1},{2}:{3},type:journal-article".format(
-            date_filter, since, date_filter.replace("from-", "until-"), until
-        ),
-        "sort": _SORT_FIELDS[date_filter],
-        "order": "desc",
-        "rows": rows,
-        "select": SELECT_FIELDS,
-    }
-    if mailto:
-        params["mailto"] = mailto
-    payload = _request(CROSSREF_JOURNAL_URL.format(issn=entry["issn"]), params)
-    items = (payload.get("message") or {}).get("items") or []
-    return [item for item in items if isinstance(item, dict)]
-
-
-def fetch_journal(
-    entry: dict,
-    since: datetime.date,
-    until: datetime.date,
-    rows: int = 200,
-    mailto: str = "",
-) -> Tuple[List[dict], Optional[str]]:
-    """Fetch one journal, unioning publication-date and creation-date queries.
-
-    The union matters: Springer Nature deposits metadata before the online
-    date, while Elsevier's issue dates can be months ahead. Either query alone
-    silently misses a class of new papers.
-    """
-    since_str = since.isoformat()
-    until_str = until.isoformat()
-    collected: Dict[str, dict] = {}
-    errors = []
-    for date_filter in ("from-pub-date", "from-created-date"):
-        try:
-            items = _fetch_query(entry, since_str, until_str, date_filter, rows, mailto)
-        except Exception as exc:
-            errors.append("{}: {}".format(date_filter, exc))
-            continue
-        for item in items:
-            doi = _doi(item)
-            if doi and doi not in collected:
-                collected[doi] = item
-    if errors and not collected:
-        return [], "; ".join(errors)
-    return list(collected.values()), ("; ".join(errors) if errors else None)
-
-
-def _build_candidate(item: dict, entry: dict, today: datetime.date) -> Optional[dict]:
-    title = _title(item)
-    doi = _doi(item)
-    if not title or not doi or _is_noise(title) or NOISE_DOI_RE.match(doi):
-        return None
-    display, sortable = _best_date(item, today)
-    abstract = _abstract(item)
-    return {
-        "journal_key": entry["key"],
-        "journal": entry["name"],
-        "publisher": entry["publisher"],
-        "issn": entry["issn"],
-        "title": title,
-        "doi": doi,
-        "url": "https://doi.org/{}".format(doi),
-        "date": display,
-        "sort_date": sortable,
-        "first_author": _first_author(item),
-        "abstract_snippet": (abstract[:400] + "…") if len(abstract) > 400 else abstract,
-        "kind": _kind(title),
-    }
+    ensure_chrome(launch=True)
+    with BrowserSession(timeout=90) as session:
+        return session.fetch_html(
+            url,
+            wait_seconds=entry.get("wait", 5.0),
+            challenge_timeout=entry.get("challenge_timeout", 60),
+            scroll=entry.get("scroll", False),
+            ready_selector=entry.get("ready", ""),
+        )
 
 
 def scan(
@@ -481,27 +649,32 @@ def scan(
     journal_keys: Optional[Iterable[str]] = None,
     config_file: Optional[Path] = None,
     today: Optional[datetime.date] = None,
-    fetcher: Optional[Callable] = None,
+    fetcher: Optional[Callable[[dict, str], str]] = None,
+    logger: Optional[Callable[[str], None]] = None,
+    translate: bool = False,
+    translator: Optional[Callable[[str], str]] = None,
 ) -> dict:
-    """Scan the configured journals and return candidates plus journal status.
+    """Scrape the configured pages and return candidates plus page statuses.
 
-    ``fetcher`` is injectable for tests; it has the same signature as
-    ``fetch_journal``. This function never extracts evidence.
+    ``fetcher`` is injectable for tests; it takes ``(entry, url)`` and returns
+    HTML. ``translate`` requests Chinese titles; ``translator`` is an optional
+    ``english -> chinese`` callable used instead of the Bing client. This
+    function never extracts evidence and never writes a note.
     """
     config = load_config(config_file)
     defaults = config["defaults"]
     days = int(defaults["days"] if days is None else days)
     limit = int(defaults["limit"] if limit is None else limit)
     sort = str(defaults["sort"] if sort is None else sort)
-    if days < 1:
-        raise ScanError("--days 必须大于 0")
+    if days < 0:
+        raise ScanError("--days 不能为负数（0 表示按页面当前列表，不做日期过滤）")
     if limit < 0:
         raise ScanError("--limit 不能为负数")
     if sort not in ("journal", "date"):
         raise ScanError("--sort 只能是 journal 或 date")
 
     today = today or datetime.date.today()
-    since = today - datetime.timedelta(days=days)
+    since = (today - datetime.timedelta(days=days)).isoformat() if days else ""
     wanted = {key.strip() for key in (journal_keys or []) if key and key.strip()}
     known = {entry["key"] for entry in config["journals"]}
     unknown = sorted(wanted - known)
@@ -512,98 +685,126 @@ def scan(
             )
         )
 
-    profile = load_profile()
-    mailto = str(profile.get("citation_contact") or "").strip()
-    fetch = fetcher or fetch_journal
+    fetch = fetcher or _fetch_page
     entries = config["journals"]
+    statuses = []
+    candidates = []
+    pages_total = 0
+    filtered = 0
 
-    statuses_by_order: Dict[int, dict] = {}
-    active = []
     for order, entry in enumerate(entries):
         if not entry["enabled"]:
-            statuses_by_order[order] = {
-                "key": entry["key"], "name": entry["name"],
-                "status": "disabled", "found": 0, "listed": 0,
-            }
-        elif wanted and entry["key"] not in wanted:
-            statuses_by_order[order] = {
-                "key": entry["key"], "name": entry["name"],
-                "status": "skipped", "found": 0, "listed": 0,
-            }
-        else:
-            active.append((order, entry))
+            statuses.append(
+                {
+                    "key": entry["key"], "name": entry["name"],
+                    "status": "disabled", "found": 0, "listed": 0,
+                    "urls": page_urls(entry), "error": "",
+                }
+            )
+            continue
+        if wanted and entry["key"] not in wanted:
+            statuses.append(
+                {
+                    "key": entry["key"], "name": entry["name"],
+                    "status": "skipped", "found": 0, "listed": 0,
+                    "urls": page_urls(entry), "error": "",
+                }
+            )
+            continue
 
-    def work(pair):
-        order, entry = pair
-        try:
-            items, error = fetch(entry, since, today, 200, mailto)
-        except Exception as exc:
-            items, error = [], str(exc)
-        return order, entry, items, error
-
-    # Crossref is an API, not a publisher page; a small pool is both polite
-    # and much faster than 60 sequential requests. A custom fetcher (tests)
-    # runs sequentially so its behaviour is deterministic.
-    if fetcher or len(active) < 2:
-        results = [work(pair) for pair in active]
-    else:
-        with ThreadPoolExecutor(max_workers=3) as pool:
-            results = list(pool.map(work, active))
-
-    candidates = []
-    for order, entry, items, error in results:
-        kept = []
-        for item in items:
-            if not _matches_keywords(item, entry["keywords"]):
+        urls = page_urls(entry)
+        pages_total += len(urls)
+        items = []
+        errors = []
+        challenge = False
+        for page_index, url in enumerate(urls, 1):
+            if logger:
+                label = entry["name"]
+                if len(urls) > 1:
+                    label += " [{}/{}]".format(page_index, len(urls))
+                logger("  → {} {}".format(label, url))
+            try:
+                page_html = fetch(entry, url)
+            except BrowserChallenge as exc:
+                challenge = True
+                errors.append(str(exc))
                 continue
-            candidate = _build_candidate(item, entry, today)
-            if candidate:
-                candidate["journal_order"] = order
-                kept.append(candidate)
-        candidates.extend(kept)
-        statuses_by_order[order] = {
-            "key": entry["key"],
-            "name": entry["name"],
-            "status": "error" if error and not kept else "ok",
-            "found": len(items),
-            "listed": 0,
-            "error": error,
-        }
+            except Exception as exc:
+                errors.append(str(exc))
+                continue
+            for item in PARSERS[entry["parser"]](page_html, url):
+                item["journal_key"] = entry["key"]
+                item["journal"] = entry["name"]
+                item["journal_order"] = order
+                item["source_page"] = url
+                if since and item.get("sort_date") and item["sort_date"] < since:
+                    filtered += 1
+                    continue
+                items.append(item)
 
-    statuses = [statuses_by_order[index] for index in range(len(entries))]
+        if not items and challenge:
+            status = "challenge"
+        elif not items and errors:
+            status = "error"
+        else:
+            status = "ok"
+        statuses.append(
+            {
+                "key": entry["key"],
+                "name": entry["name"],
+                "status": status,
+                "found": len(items),
+                "listed": 0,
+                "urls": urls,
+                "error": "; ".join(error for error in errors if error),
+            }
+        )
+        candidates.extend(items)
 
-    # Dedupe across journals (shared DOIs/titles happen with co-published
-    # announcements) before applying the global limit.
+    # Deduplicate globally: Science First Release and Current can overlap,
+    # and co-published announcements share a DOI.
     unique: Dict[str, dict] = {}
     seen_titles = set()
     for candidate in candidates:
-        doi = candidate["doi"]
-        title_key = _normalise_title(candidate["title"])
-        if doi in unique or (title_key and title_key in seen_titles):
+        doi = candidate.get("doi") or ""
+        title_key = _normalise_title(candidate.get("title"))
+        key = "doi:" + doi if doi else "title:" + title_key
+        if key in unique:
+            existing = unique[key]
+            if doi and not existing.get("doi"):
+                existing["doi"] = doi
+                existing["url"] = candidate["url"]
             continue
-        unique[doi] = candidate
-        seen_titles.add(title_key)
+        alt_key = "title:" + title_key if title_key else ""
+        if alt_key and alt_key in unique:
+            continue
+        unique[key] = candidate
+        if title_key:
+            seen_titles.add(title_key)
 
-    ordered = sorted(
-        unique.values(),
-        key=lambda item: (item["sort_date"] or "", -item["journal_order"]),
-        reverse=True,
-    )
+    ordered = list(unique.values())
     total_found = len(ordered)
 
-    # A plain top-N cut would let Nature and Nature Communications consume the
-    # whole budget and hide every specialist journal. Round-robin keeps the
-    # list representative, then the cut items are shown in date order.
+    if sort == "date":
+        ordered.sort(
+            key=lambda item: (
+                item.get("sort_date") or "", -item.get("journal_order", 0)
+            ),
+            reverse=True,
+        )
+    else:
+        ordered.sort(key=lambda item: item.get("journal_order", 0))
+
+    # Round-robin keeps every selected journal visible when --limit is small.
     if limit and total_found > limit:
-        queues: Dict[str, List[dict]] = {}
+        queues: Dict[int, List[dict]] = {}
         for item in ordered:
-            queues.setdefault(item["journal_key"], []).append(item)
-        config_order = [entry["key"] for entry in entries]
+            queues.setdefault(item["journal_order"], []).append(item)
         selected = []
         while len(selected) < limit:
             added = False
-            for key in config_order:
-                queue = queues.get(key)
+            for order in sorted(queues):
+                queue = queues.get(order)
                 if not queue:
                     continue
                 selected.append(queue.pop(0))
@@ -613,21 +814,72 @@ def scan(
             if not added:
                 break
         ordered = selected
-        ordered.sort(
-            key=lambda item: (item["sort_date"] or "", -item["journal_order"]),
-            reverse=True,
-        )
+        if sort == "date":
+            ordered.sort(
+                key=lambda item: (
+                    item.get("sort_date") or "", -item["journal_order"]
+                ),
+                reverse=True,
+            )
+        else:
+            ordered.sort(key=lambda item: item["journal_order"])
+
+    translation_meta = {
+        "enabled": bool(translate),
+        "provider": "",
+        "cached": 0,
+        "translated": 0,
+        "missing": 0,
+        "error": "",
+    }
+    for item in ordered:
+        item.setdefault("title_zh", "")
+    if translate and ordered:
+        from .translate import translate_titles
+
+        titles = [item["title"] for item in ordered]
+        try:
+            if translator is not None:
+                mapping = {
+                    _clean(title): _clean(translator(title)) for title in titles
+                }
+                mapping = {key: value for key, value in mapping.items() if value}
+                translation_meta.update(
+                    {
+                        "provider": "custom",
+                        "translated": len(mapping),
+                        "missing": len(titles) - len(mapping),
+                    }
+                )
+            else:
+                mapping, meta = translate_titles(
+                    titles,
+                    SCAN_DIR / "translations.json",
+                    logger=logger,
+                )
+                translation_meta.update(meta)
+        except Exception as exc:
+            mapping = {}
+            translation_meta["error"] = str(exc)
+            translation_meta["missing"] = len(titles)
+        for item in ordered:
+            item["title_zh"] = mapping.get(_clean(item["title"]), "")
+        if not translation_meta.get("missing"):
+            translation_meta["missing"] = sum(
+                1 for item in ordered if not item.get("title_zh")
+            )
 
     groups = []
     if sort == "journal":
-        for entry in config["journals"]:
+        for entry in entries:
             items = [item for item in ordered if item["journal_key"] == entry["key"]]
             if not items:
                 continue
-            items.sort(key=lambda item: (item["sort_date"] or ""), reverse=True)
-            groups.append({"key": entry["key"], "name": entry["name"], "items": items})
+            groups.append(
+                {"key": entry["key"], "name": entry["name"], "items": items}
+            )
     elif ordered:
-        groups = [{"key": "all", "name": "按上线日期排序", "items": ordered}]
+        groups = [{"key": "all", "name": "按页面日期排序", "items": ordered}]
 
     index = 0
     for group in groups:
@@ -639,53 +891,90 @@ def scan(
                     status["listed"] += 1
                     break
 
-    # Keep the JSON candidate order identical to the rendered order.
     ordered = [item for group in groups for item in group["items"]]
-
-    scanned = sum(1 for status in statuses if status["status"] in ("ok", "error"))
+    scanned = sum(
+        1 for status in statuses if status["status"] in ("ok", "error", "challenge")
+    )
     return {
-        "generated_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
-        "window": {"from": since.isoformat(), "to": today.isoformat(), "days": days},
+        "generated_at": datetime.datetime.now().astimezone().isoformat(
+            timespec="seconds"
+        ),
+        "source": "publisher-pages",
+        "window": {
+            "from": since,
+            "to": today.isoformat(),
+            "days": days,
+            "filtered": filtered,
+        },
         "config": config["path"],
         "sort": sort,
         "limit": limit,
         "scanned": scanned,
+        "pages": pages_total,
         "total_found": total_found,
         "total": len(ordered),
         "truncated": bool(limit and total_found > len(ordered)),
+        "translation": translation_meta,
         "journals": statuses,
         "groups": groups,
         "candidates": ordered,
     }
 
 
-def _item_line(item: dict) -> str:
-    meta = [item["journal"]]
+# ---------------------------------------------------------------------------
+# Rendering
+# ---------------------------------------------------------------------------
+
+
+def _item_meta(item: dict) -> str:
+    parts = [item["journal"]]
+    if item.get("kind"):
+        parts.append(item["kind"])
     if item.get("date"):
-        meta.append(item["date"])
-    if item.get("first_author"):
-        meta.append(item["first_author"])
-    if item.get("kind") == "commentary":
-        meta.append("评论/回复")
-    return " · ".join(meta)
+        parts.append(item["date"])
+    if item.get("doi"):
+        parts.append("[DOI](https://doi.org/{})".format(item["doi"]))
+    if item.get("url"):
+        parts.append("[原文]({})".format(item["url"]))
+    return " · ".join(parts)
 
 
 def render_markdown(payload: dict) -> str:
     window = payload["window"]
+    translation = payload.get("translation") or {}
     lines = [
-        "# 期刊新文献清单 · {} → {}".format(window["from"], window["to"]),
+        "# 期刊新文献清单 · 抓取于 {}".format(
+            payload["generated_at"][:16].replace("T", " ")
+        ),
         "",
         "> **候选清单，尚未精读**",
         ">",
-        "> 共 {} 篇候选（扫描 {} 本期刊）。在用户明确选择编号之前，"
-        "不得建立证据包、不得写笔记。".format(payload["total"], payload["scanned"]),
+        "> 共 {} 篇，来自 {} 个期刊页面。在你明确回复编号或 DOI 之前，"
+        "不得建立证据包、不得写笔记。".format(payload["total"], payload["pages"]),
         "",
     ]
+    if translation.get("enabled"):
+        lines.append(
+            "> 中文标题为机器翻译，仅供检索；阅读与引用请以英文原题和原文为准。"
+        )
+        lines.append("")
+        if translation.get("missing"):
+            lines.append(
+                "> 中文标题暂缺 {} 篇（翻译失败或限流）；重跑同一条命令会补齐。".format(
+                    translation["missing"]
+                )
+            )
+            lines.append("")
+    if window["days"]:
+        lines.append(
+            "> 日期过滤：仅显示 {} 之后有明确日期的条目；无日期条目保留。".format(
+                window["from"]
+            )
+        )
+        lines.append("")
     if payload["truncated"]:
         lines.append(
-            "> 说明：窗口内共 {} 篇，按 `--limit {}` 只列出 {} 篇。"
-            "各期刊按清单顺序轮转选取，避免高产期刊挤掉专业期刊；"
-            "需要更多请加大 `--limit`，或先用 `--journal` 只看某几本。".format(
+            "> 说明：共 {} 篇，按 `--limit {}` 列出 {} 篇（各期刊轮转选取）。".format(
                 payload["total_found"], payload["limit"], payload["total"]
             )
         )
@@ -693,23 +982,23 @@ def render_markdown(payload: dict) -> str:
 
     if not payload["groups"]:
         lines.extend([
-            "窗口内没有检索到条目。可以加大 `--days`，或检查 "
-            "`.geo-reader/journals.json` 中的 `enabled` 与 ISSN。",
+            "没有解析到候选。请检查扫描告警；如果浏览器停在人机验证页，"
+            "请在 Chrome 窗口中完成验证后重新运行同一条命令。",
             "",
         ])
 
     for group in payload["groups"]:
-        lines.append("## {}".format(group["name"]))
+        lines.append("## {}（{} 篇）".format(group["name"], len(group["items"])))
         lines.append("")
         for item in group["items"]:
             lines.append("**[{}] {}**".format(item["index"], item["title"]))
-            lines.append("")
-            lines.append(
-                "{} · [{}]({})".format(_item_line(item), item["doi"], item["url"])
-            )
-            if item.get("abstract_snippet"):
+            if translation.get("enabled"):
                 lines.append("")
-                lines.append("> 摘要开头：{}".format(item["abstract_snippet"]))
+                lines.append(
+                    "中文（机译）：{}".format(item.get("title_zh") or "暂缺")
+                )
+            lines.append("")
+            lines.append(_item_meta(item))
             lines.append("")
 
     lines.extend([
@@ -720,15 +1009,13 @@ def render_markdown(payload: dict) -> str:
         "回复要精读的编号（例如 `3, 7, 12`），或直接给出 DOI。"
         "**在你选择之前，这份清单不会触发任何抽取或写作。**",
         "",
-        "选定后才会逐篇执行：",
+        "这个脚本只负责抓页面和列清单；它不会运行 `--doi`，"
+        "不会创建 `.raw/`，也不会写 `papers/*.md`。"
+        "只有你回复编号或 DOI 之后，才会由 agent 逐篇建立证据包。",
         "",
-        "```bash",
-        'python3 main.py --doi "<选中的 DOI>"',
-        "```",
-        "",
-        "扫描口径：Crossref 按 ISSN 拉取每本期刊在该窗口内“新上线”或“新登记”的 "
-        "`journal-article`，合并去重，并去掉更正、勘误、社论、撤稿等非研究条目。"
-        "Crossref 的收录时间可能晚于出版社页面，因此清单是候选而非完备列表。",
+        "列表来自各期刊官网的 research-articles / current issue / "
+        "early publication 页面，不是主题检索，也不是按上下文推断。"
+        "页面本身决定“最新”的范围；如需更早的文章，请直接给 DOI。",
         "",
     ])
 
@@ -737,42 +1024,86 @@ def render_markdown(payload: dict) -> str:
         lines.append("## 扫描告警")
         lines.append("")
         for status in problems:
-            lines.append("- {}：{}".format(status["name"], status["error"]))
+            if status["status"] == "challenge":
+                lines.append(
+                    "- {}：遇到人机验证。请在打开的 Chrome 窗口完成验证，"
+                    "然后重新运行同一条命令；脚本不会自动刷新。".format(
+                        status["name"]
+                    )
+                )
+            else:
+                lines.append("- {}：{}".format(status["name"], status["error"]))
         lines.append("")
     return "\n".join(lines)
 
 
 def render_console(payload: dict) -> str:
     window = payload["window"]
+    translation = payload.get("translation") or {}
     lines = [
-        "期刊新文献清单 · {} → {}".format(window["from"], window["to"]),
-        "扫描 {} 本期刊，{} 篇候选（尚未建立证据包）".format(
-            payload["scanned"], payload["total"]
+        "期刊新文献清单 · 抓取于 {}".format(
+            payload["generated_at"][:16].replace("T", " ")
+        ),
+        "扫描 {} 个期刊页面，{} 篇候选（尚未建立证据包）".format(
+            payload["pages"], payload["total"]
         ),
     ]
+    if translation.get("enabled"):
+        lines.append("中文标题为机器翻译，仅供检索；以英文原题为依据")
+        if translation.get("missing"):
+            lines.append(
+                "中文标题暂缺 {} 篇（翻译失败或限流），重跑可补齐".format(
+                    translation["missing"]
+                )
+            )
+    if window["days"]:
+        lines.append("日期过滤：{} 之后（无日期条目保留）".format(window["from"]))
     if payload["truncated"]:
         lines.append(
-            "窗口内共 {} 篇，按 limit={} 只列出 {} 篇（各期刊轮转选取）".format(
+            "共 {} 篇，按 limit={} 列出 {} 篇（各期刊轮转选取）".format(
                 payload["total_found"], payload["limit"], payload["total"]
             )
         )
     lines.append("")
+
     for group in payload["groups"]:
-        lines.append("== {} ==".format(group["name"]))
+        lines.append("== {}（{} 篇）==".format(group["name"], len(group["items"])))
         for item in group["items"]:
+            meta = [item["journal"]]
+            if item.get("kind"):
+                meta.append(item["kind"])
+            if item.get("date"):
+                meta.append(item["date"])
+            if item.get("doi"):
+                meta.append("DOI: " + item["doi"])
             lines.append("[{}] {}".format(item["index"], item["title"]))
-            lines.append("    {}".format(_item_line(item)))
-            lines.append("    DOI: {}".format(item["doi"]))
+            if translation.get("enabled"):
+                lines.append(
+                    "    中文：" + (item.get("title_zh") or "暂缺")
+                )
+            lines.append("    " + " · ".join(meta))
+            if not item.get("doi") and item.get("url"):
+                lines.append("    " + item["url"])
         lines.append("")
+
     if not payload["groups"]:
-        lines.append("窗口内没有检索到条目。可加大 --days 或检查期刊清单。")
+        lines.append("没有解析到候选。请检查扫描告警。")
         lines.append("")
+
     problems = [status for status in payload["journals"] if status.get("error")]
     if problems:
         lines.append("扫描告警：")
         for status in problems:
-            lines.append("  - {}: {}".format(status["name"], status["error"]))
+            if status["status"] == "challenge":
+                lines.append(
+                    "  - {}: 需要人工完成人机验证，完成后重跑同一条命令".format(
+                        status["name"]
+                    )
+                )
+            else:
+                lines.append("  - {}: {}".format(status["name"], status["error"]))
         lines.append("")
+
     lines.append("下一步：回复编号选择要精读的条目；脚本不会自动抽取。")
     return "\n".join(lines)
 

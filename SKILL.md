@@ -1,6 +1,6 @@
 ---
 name: geo-academic-reader
-version: "0.3.3"
+version: "0.4.0"
 license: MIT
 description: >-
   Browser-first evidence extraction and VS Code-ready literature notes for scientific
@@ -13,7 +13,7 @@ compatibility: >-
   Optional: pymupdf for better PDF figure cropping.
 ---
 
-# geo-academic-reader (v0.3.3)
+# geo-academic-reader (v0.4.0)
 
 A workspace-level workflow, not a one-shot summarizer. The scripts extract evidence; the agent interprets it; a QA command verifies the note before delivery.
 
@@ -64,14 +64,17 @@ Installed entry points: `geo-reader`, `geo-doctor`.
 ## 🔎 New-Literature Watch (list first, P0)
 
 ```bash
-python3 main.py --new-literature --days 7
-python3 main.py --new-literature --days 14 --journal epsl --journal gca
+python3 main.py --new-literature
+python3 main.py --new-literature --journal epsl --journal geology_early
+python3 main.py --new-literature --no-translate   # English-only list
 python3 main.py --journals-init      # create and edit .geo-reader/journals.json
 ```
 
-The scan reads `journals.json` (user copy `.geo-reader/journals.json` first), queries Crossref by ISSN for records published or deposited in the window, deduplicates, and drops corrections, errata, editorials, retractions and society front matter. It writes `.geo-reader/journal-scan/latest.md` with numbered candidates.
+The scan reads `journals.json` (user copy `.geo-reader/journals.json` first) and opens each configured page in Chrome/CDP: Nature research-articles, Science First Release and Current, Science Advances, EPSL volumes, AGU journals, Geology current and early publication, GJI, and PNAS Earth. It parses the entries each page lists, adds a cached Chinese machine translation for every title, and writes `.geo-reader/journal-scan/latest.md` with numbered candidates. `--days 0` (the default) takes the page as-is.
 
-**Stop after listing.** Present titles, journals, dates and DOIs; do not run `--doi`, create `.raw/`, or write a note until the user names numbers or DOIs. Never replace the scan with an OpenAlex or web topic search, and never infer the topic from existing notes or the conversation. If the scan is empty, report the window and journal errors and offer `--days` or a list edit.
+Each candidate carries the English title plus a `中文（机译）：` line. The translation is for scanning only — the English title is authoritative. Cache: `.geo-reader/journal-scan/translations.json`; geoscience terms are post-edited on read (fugacity→逸度, sub-arc→弧下). If a title shows “暂缺”, rerun to fill it; never invent one.
+
+**Stop after listing.** Present the English title with its Chinese line, journal, date and DOI; do not run `--doi`, create `.raw/`, or write a note until the user names numbers or DOIs. Never replace the scan with an OpenAlex or web topic search, and never infer the topic from existing notes or the conversation. If a page is empty or reports a challenge, name the page and error; complete Cloudflare checks in the opened Chrome window and rerun the same command. Do not auto-refresh.
 
 ---
 
@@ -222,8 +225,11 @@ Guarantees: `.geo-reader/profile.json` is backed up and restored if needed; `pap
 | `--update` refuses on a dirty tree | Local tracked code changes | Commit or `git stash`; never `reset --hard`. Notes and packs are untouched |
 | Profile missing after update | Rare partial restore | Restore `.geo-reader/backups/profile-<timestamp>.json`; `--update` also restores automatically |
 | Crossref 404 | New/preprint DOI | Use `--url`, or download the PDF and use `--pdf` |
-| `--new-literature` returns 0 | No records in the window, or all journals disabled | Increase `--days`; check `enabled` and ISSNs in `.geo-reader/journals.json` |
-| Crossref 429 during a scan | Shared rate limit | The scan paces requests and retries once; rerun later |
+| `--new-literature` returns 0 | No entries parsed, page disabled, or markup changed | Check `enabled` and the page URL; confirm the `parser` still matches the page |
+| A journal page hits Cloudflare | Human check required | Complete it in the opened Chrome window, then rerun; the scan does not auto-refresh |
+| EPSL list is stale or short | Volume numbers advanced | Update `volumes` in `.geo-reader/journals.json` |
+| A candidate shows “暂缺” for the Chinese title | Translation rate limit or service outage | Rerun `--new-literature`; cached titles are reused and only missing ones are retried. Never invent a title |
+| Chinese term is mistranslated | Machine translation, not a definitive rendering | Add a rule to `TERM_FIXES` in `scripts/translate.py`; the cache stores raw output, so fixes apply on read |
 | Journal list missing or invalid JSON | `journals.json` deleted/edited badly | `python3 main.py --journals-init --force` (overwrites the user copy) or restore the file |
 | PDF text empty | Scanned PDF, no text layer | OCR is not included; obtain a text PDF or use the publisher page |
 

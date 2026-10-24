@@ -96,11 +96,17 @@ Observations from running this workspace on real papers. The theme is the same t
 - Version checks must be cheap and offline-safe: a six-hour cache, a short timeout, exit code 0 on failure. An update check that fails a reading task trains users to disable it.
 - Patch-first versioning (`0.3.0 → 0.3.1`) keeps release numbering legible for a user who only wants to know whether their copy is current.
 
-## [tags: discovery, journals, workflow] “Find New Papers” Is a List, Not a Choice
+## [tags: discovery, journals, workflow] “Find New Papers” Opens the User's Pages, Not a Topic Search
 
-- The failure: asked to “找新文献”, the agent searched OpenAlex by topics inferred from existing notes and produced a curated reading list. It looked helpful and was the wrong contract. The user had asked for the journals' own new-article lists, and wanted to choose before any reading.
-- The fix is two-stage. `--new-literature` scans `journals.json` / `.geo-reader/journals.json` by ISSN, writes a numbered candidate list, and stops. Only after the user names numbers or DOIs does extraction start.
+- First failure: asked to “找新文献”, the agent searched OpenAlex by topics inferred from existing notes and produced a curated reading list. It looked helpful and was the wrong contract. The user had asked for the journals' own new-article lists, and wanted to choose before any reading.
+- Second failure: the two-stage fix still shipped its own 30-journal Crossref list. That was not the user's list. Their list is a set of publisher pages — Nature research-articles, Science First Release / Current, EPSL volumes, AGU journals, Geology current / early, GJI, PNAS Earth — 17 sections in all. Rebuilt from that list (reference workspace read-only).
+- The contract: `--new-literature` opens each configured page in Chrome/CDP, parses the entries the page lists, writes a numbered candidate list, and stops. Only after the user names numbers or DOIs does extraction start.
 - Topic inference is the bug, not a feature. Even a good guess removes the user's choice and hides which journals were actually covered.
-- Static keyword filters are allowed because the user configures them in advance. They must never be rewritten from the conversation.
-- An empty scan is reported as an empty scan. Do not “helpfully” replace it with a web topic search.
-- Crossref needs two date queries per journal: publication date catches Springer Nature and AGU, creation date catches Elsevier's future issue dates. One query alone silently loses half the list.
+- No keyword filter. A broad journal will list non-geoscience papers; that is the user's chosen scope. Never narrow it from the conversation.
+- The page decides what “latest” means. A research-articles page covers weeks; a volume page covers an issue. `--days 0` is the default so the page is shown as-is.
+- Cloudflare is a hand-off, not a retry loop. Wait, report, ask the user to finish the check, rerun the same command.
+- Crossref is convenient but not equivalent: it returns what was deposited, not what the page currently lists. Issue dates can sit months ahead, and section choices (AGU Recently Published, PNAS Recent articles, Geology early publication) are lost.
+- A Chinese title is part of the list, but it is a reading aid, not bibliographic data. Translate with a real service (Bing `ttranslatev3`, since Google is blocked and MyMemory runs out after ~1000 words), label it “机译，仅供检索”, keep the English title authoritative, and cache by English title so a 300-item scan costs three new requests on rerun, not three hundred.
+- Translate the *clean* title. Escaped inline markup (`NH&lt;sub&gt;4&lt;/sub&gt;`, `<i>P</i>-Wave`) must be unescaped before tags are stripped, or the cache key differs from the displayed title and a handful of entries silently show “暂缺”.
+- Store raw machine output and post-edit on read. A glossary (`fugacity→逸度`, `sub-arc→弧下`, `large igneous province→大火成岩省`) can then improve every cached entry without retranslation, and a bad rule is a one-line fix rather than a cache purge.
+- Never hand-write a missing translation. “暂缺” plus a rerun instruction is honest; a plausible-looking invented title is not.

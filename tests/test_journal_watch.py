@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for the journal new-literature scan.
-
-The scan must be a *listing* step: it reads only the configured journal list,
-never the notes or the conversation, and it never extracts evidence.
-"""
+"""Tests for the publisher-page journal scan."""
 
 import datetime
 import json
@@ -13,278 +9,454 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from scripts import journal_watch
+from scripts import journal_watch as jw
+from scripts.browser import BrowserChallenge
 
 
-TODAY = datetime.date(2026, 10, 24)
+NATURE_PAGE = """
+<article class="c-card">
+  <h3 class="c-card__title"><a href="/articles/s41586-026-11111-1">Mantle mixing</a></h3>
+  <time datetime="2026-10-21">21 October 2026</time>
+</article>
+<article class="c-card">
+  <h3 class="c-card__title"><a href="/articles/s41586-026-22222-2">Core formation</a></h3>
+  <time datetime="2026-10-20">20 October 2026</time>
+</article>
+"""
+
+NGEO_PAGE = """
+<article class="c-card">
+  <h3 class="c-card__title"><a href="/articles/s41561-026-33333-3">Deep water cycle</a></h3>
+  <time datetime="2026-10-22">22 October 2026</time>
+</article>
+<article class="c-card">
+  <h3 class="c-card__title"><a href="/articles/s41561-026-44444-4">Craton growth</a></h3>
+  <time datetime="2026-10-19">19 October 2026</time>
+</article>
+"""
+
+SCIENCE_PAGE = """
+<h4 class="to-section">21 October 2026</h4>
+<h3 class="article-title"><a href="/doi/10.1126/science.abc123">First release paper</a></h3>
+<h4 class="to-section">20 October 2026</h4>
+<h3 class="article-title"><a href="/doi/10.1126/science.def456">Older release paper</a></h3>
+"""
+
+SCIENCE_CURRENT_PAGE = """
+<h4 class="to-section">News</h4>
+<h3 class="article-title"><a href="/doi/10.1126/science.news1">News item</a></h3>
+<h4 class="to-section">Research Articles</h4>
+<h3 class="article-title"><a href="/doi/10.1126/science.res1">Research paper</a></h3>
+"""
+
+SCIADV_PAGE = """
+<h4 class="to-section">Neuroscience</h4>
+<div class="card  "><h3 class="article-title"><a href="/doi/10.1126/sciadv.neur1">Brain paper</a></h3></div>
+<h4 class="to-section">Earth, Environmental, Ecological, and Space Sciences</h4>
+<div class="card  "><h3 class="article-title"><a href="/doi/10.1126/sciadv.earth1">Earth paper</a></h3><time>21 October 2026</time></div>
+<div class="card "><h3 class="article-title"><a href="/doi/10.1126/sciadv.earth2">Second earth paper</a></h3></div>
+"""
+
+EPSL_PAGE = """
+<div>
+  <a href="https://doi.org/10.1016/j.epsl.2026.120418">doi</a>
+  <a class="anchor article-content-title u-margin-xs-top anchor-primary"
+     href="/science/article/pii/S0012821X26005984">Remagnetization fingerprints</a>
+</div>
+"""
+
+AGU_PAGE = """
+<div id="pane-recent">
+  <div class="issue-item">
+    <a href="/doi/10.1029/2026GL121695" title="Recent GRL paper" class="issue-item__title">x</a>
+    <span><label>First Published:</label><span>&nbsp;21 October 2026</span></span>
+  </div>
+</div>
+<div id="pane-cited">
+  <div class="issue-item">
+    <a href="/doi/10.1029/1999GL000001" title="Old cited paper" class="issue-item__title">x</a>
+  </div>
+</div>
+"""
+
+GEOLOGY_CURRENT_PAGE = """
+<h3 class="customLink item-title">
+  <a href="/gsa/geology/article/54/10/963/732263/Paper">Riverbed paper</a>
+</h3>
+<a href="/doi/10.1130/G54629.1">doi</a>
+<a href="/geology/article-pdf/54/10/963/732263/G54629.1.pdf">pdf</a>
+"""
+
+GEOLOGY_EARLY_PAGE = """
+<h2 class="al-subgroup-outer-id">October 21, 2026</h2>
+<h5 class="al-title"><a href="/geology/article/doi/10.1130/G53093.1/12345">Early paper</a></h5>
+<h2 class="al-subgroup-outer-id">October 20, 2026</h2>
+<h5 class="al-title"><a href="/geology/article/doi/10.1130/G53094.1/12346">Second early paper</a></h5>
+"""
+
+GJI_PAGE = """
+<div class="widget-dynamic-entry journalArticleItem">
+  <span class="hfDoi" data-attribute="10.1093/gji/ggag453"></span>
+  <a class="journal-link" href="/gji/advance-article/doi/10.1093/gji/ggag453/1">
+    <div class="widget-dynamic-journal-title">Cyclic loading of MgO</div>
+  </a>
+</div>
+"""
+
+PNAS_PAGE = """
+<h2>Recent articles</h2>
+<div class="card  ">
+  <a href="/doi/10.1073/pnas.2608656123" title="Warm rain paper"></a>
+  <a class="card__meta__type">Research Article</a>
+  <span class="card__meta__date">October 21, 2026</span>
+</div>
+<h2>Trending</h2>
+<div class="card  ">
+  <a href="/doi/10.1073/pnas.1111111111" title="Old trending paper"></a>
+</div>
+"""
 
 
-def _config(journals, keyword_sets=None, defaults=None):
-    return {
-        "version": 1,
-        "defaults": defaults or {"days": 7, "limit": 20, "sort": "date"},
-        "keyword_sets": keyword_sets or {},
-        "journals": journals,
-    }
+class CleanTests(unittest.TestCase):
+    def test_escaped_inline_markup_is_removed(self):
+        self.assertEqual(
+            jw._clean(
+                "NH&lt;sub&gt;4&lt;/sub&gt;-Smectites on the &lt;i&gt;Curiosity&lt;/i&gt; rover"
+            ),
+            "NH4-Smectites on the Curiosity rover",
+        )
+
+    def test_raw_inline_markup_is_removed(self):
+        self.assertEqual(
+            jw._clean("Revealed by <i>P</i>-Wave tomography"),
+            "Revealed by P-Wave tomography",
+        )
 
 
-def _write_config(directory, payload):
-    path = Path(directory) / "journals.json"
-    path.write_text(json.dumps(payload), encoding="utf-8")
-    return path
+class DateTests(unittest.TestCase):
+    def test_day_month_year(self):
+        self.assertEqual(jw._parse_date("21 October 2026"), "2026-10-21")
+        self.assertEqual(jw._parse_date("First Published: 21 October 2026"), "2026-10-21")
+
+    def test_month_day_year(self):
+        self.assertEqual(jw._parse_date("October 21, 2026"), "2026-10-21")
+        self.assertEqual(jw._parse_date("2026-10-21"), "2026-10-21")
+        self.assertEqual(jw._parse_date("First Release"), "")
 
 
-def _item(doi, title, published=(2026, 10, 20), created="2026-10-20T00:00:00Z",
-          abstract=""):
-    return {
-        "DOI": doi,
-        "title": [title],
-        "published": {"date-parts": [list(published)]},
-        "created": {"date-time": created},
-        "author": [{"given": "Ada", "family": "Lovelace"}],
-        "abstract": abstract,
-        "type": "journal-article",
-    }
+class ParserTests(unittest.TestCase):
+    def test_nature(self):
+        items = jw.parse_nature(NATURE_PAGE, "https://www.nature.com/nature/research-articles")
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[0]["doi"], "10.1038/s41586-026-11111-1")
+        self.assertEqual(items[0]["date"], "2026-10-21")
+        self.assertEqual(
+            items[0]["url"],
+            "https://www.nature.com/articles/s41586-026-11111-1",
+        )
+
+    def test_science_first_release(self):
+        items = jw.parse_science_first(SCIENCE_PAGE, "https://www.science.org/toc/science/0/0")
+        self.assertEqual([item["doi"] for item in items], [
+            "10.1126/science.abc123", "10.1126/science.def456"
+        ])
+        self.assertEqual(items[0]["date"], "2026-10-21")
+
+    def test_science_current_only_research_articles(self):
+        items = jw.parse_science_current(
+            SCIENCE_CURRENT_PAGE, "https://www.science.org/toc/science/current"
+        )
+        self.assertEqual([item["title"] for item in items], ["Research paper"])
+
+    def test_science_advances_only_earth_section(self):
+        items = jw.parse_science_advances(
+            SCIADV_PAGE, "https://www.science.org/toc/sciadv/current"
+        )
+        self.assertEqual([item["title"] for item in items], [
+            "Earth paper", "Second earth paper"
+        ])
+
+    def test_epsl_uses_page_doi(self):
+        items = jw.parse_epsl(
+            EPSL_PAGE,
+            "https://www.sciencedirect.com/journal/earth-and-planetary-science-letters/vol/699/suppl/C",
+        )
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["doi"], "10.1016/j.epsl.2026.120418")
+        self.assertIn("/science/article/pii/S0012821X26005984", items[0]["url"])
+
+    def test_epsl_does_not_invent_missing_doi(self):
+        page = EPSL_PAGE.replace(
+            '<a href="https://doi.org/10.1016/j.epsl.2026.120418">doi</a>', ""
+        )
+        items = jw.parse_epsl(page, "https://www.sciencedirect.com/x")
+        self.assertEqual(items[0]["doi"], "")
+        self.assertIn("/science/article/pii/", items[0]["url"])
+
+    def test_agu_uses_recently_published_pane_only(self):
+        items = jw.parse_agu(AGU_PAGE, "https://agupubs.onlinelibrary.wiley.com/journal/19448007")
+        self.assertEqual([item["doi"] for item in items], ["10.1029/2026gl121695"])
+        self.assertEqual(items[0]["date"], "2026-10-21")
+
+    def test_geology_current(self):
+        items = jw.parse_geology_current(
+            GEOLOGY_CURRENT_PAGE, "https://pubs.geoscienceworld.org/geology/issue/current"
+        )
+        self.assertEqual(items[0]["doi"], "10.1130/g54629.1")
+        self.assertEqual(items[0]["title"], "Riverbed paper")
+
+    def test_geology_early_groups_dates(self):
+        items = jw.parse_geology_early(
+            GEOLOGY_EARLY_PAGE,
+            "https://pubs.geoscienceworld.org/geology/early-publication",
+        )
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[0]["date"], "2026-10-21")
+        self.assertEqual(items[1]["doi"], "10.1130/g53094.1")
+
+    def test_gji(self):
+        items = jw.parse_gji(GJI_PAGE, "https://academic.oup.com/gji")
+        self.assertEqual(items[0]["doi"], "10.1093/gji/ggag453")
+        self.assertEqual(items[0]["title"], "Cyclic loading of MgO")
+
+    def test_pnas_stops_at_trending(self):
+        items = jw.parse_pnas(PNAS_PAGE, "https://www.pnas.org/topic/earth-sci")
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["doi"], "10.1073/pnas.2608656123")
+        self.assertEqual(items[0]["kind"], "Research Article")
+        self.assertEqual(items[0]["date"], "2026-10-21")
 
 
 class ConfigTests(unittest.TestCase):
-    def test_keyword_set_is_resolved(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path = _write_config(temp, _config(
-                [{"key": "nature", "name": "Nature", "issn": "0028-0836",
-                  "keyword_set": "geo", "keywords": ["extra"]}],
-                {"geo": ["earth*", "mars"]},
-            ))
-            config = journal_watch.load_config(path)
-            entry = config["journals"][0]
-            self.assertEqual(entry["keywords"], ["extra", "earth*", "mars"])
-            self.assertTrue(entry["enabled"])
+    def _write_config(self, payload):
+        directory = tempfile.mkdtemp()
+        path = Path(directory) / "journals.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return path
 
-    def test_duplicate_key_is_rejected(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path = _write_config(temp, _config([
-                {"key": "same", "name": "A", "issn": "1234-5678"},
-                {"key": "same", "name": "B", "issn": "8765-4321"},
-            ]))
-            with self.assertRaises(journal_watch.JournalConfigError):
-                journal_watch.load_config(path)
+    def _entry(self, **overrides):
+        entry = {
+            "key": "nature",
+            "name": "Nature",
+            "parser": "nature",
+            "url": "https://www.nature.com/nature/research-articles",
+        }
+        entry.update(overrides)
+        return entry
 
-    def test_missing_issn_is_rejected(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path = _write_config(temp, _config([
-                {"key": "broken", "name": "Broken"},
-            ]))
-            with self.assertRaises(journal_watch.JournalConfigError):
-                journal_watch.load_config(path)
+    def test_load_and_defaults(self):
+        path = self._write_config(
+            {"version": 2, "defaults": {"days": 0, "limit": 0, "sort": "journal"},
+             "journals": [self._entry()]}
+        )
+        config = jw.load_config(path)
+        self.assertEqual(config["defaults"], {"days": 0, "limit": 0, "sort": "journal"})
+        self.assertEqual(config["journals"][0]["wait"], 5.0)
 
-    def test_unknown_keyword_set_is_rejected(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path = _write_config(temp, _config([
-                {"key": "j", "name": "J", "issn": "1234-5678",
-                 "keyword_set": "nope"},
-            ]))
-            with self.assertRaises(journal_watch.JournalConfigError):
-                journal_watch.load_config(path)
+    def test_duplicate_key(self):
+        path = self._write_config({"journals": [self._entry(), self._entry()]})
+        with self.assertRaises(jw.JournalConfigError):
+            jw.load_config(path)
 
+    def test_legacy_issn_list_is_rejected_with_migration_hint(self):
+        path = self._write_config(
+            {"version": 1, "journals": [{
+                "key": "nature", "name": "Nature", "issn": "0028-0836",
+            }]}
+        )
+        with self.assertRaises(jw.JournalConfigError) as caught:
+            jw.load_config(path)
+        self.assertIn("journals-init --force", str(caught.exception))
 
-class FilterTests(unittest.TestCase):
-    def test_keyword_is_a_whole_word_unless_starred(self):
-        title = {"title": ["Scientists put a salt marsh in a giant wave machine"]}
-        self.assertFalse(journal_watch._matches_keywords(title, ["mars"]))
-        self.assertTrue(journal_watch._matches_keywords(title, ["mars*"]))
-        core = {"title": ["A core research skill"]}
-        self.assertTrue(journal_watch._matches_keywords(core, ["core"]))
-        score = {"title": ["A polygenic score for height"]}
-        self.assertFalse(journal_watch._matches_keywords(score, ["core"]))
-        self.assertTrue(journal_watch._matches_keywords(
-            {"title": ["Volcanic degassing"]}, ["volcan*"]))
+    def test_unknown_parser(self):
+        path = self._write_config({"journals": [self._entry(parser="nope")]})
+        with self.assertRaises(jw.JournalConfigError):
+            jw.load_config(path)
 
-    def test_noise_titles_are_dropped(self):
-        for title in (
-            "Correction to: A paper",
-            "Author Correction: A paper",
-            "Editorial: Looking back",
-            "Daily briefing: A new result",
-            "Mineralogical Society of America",
-            "Société Française de Minéralogie et de Cristallographie",
-        ):
-            self.assertTrue(journal_watch._is_noise(title), title)
-        self.assertFalse(journal_watch._is_noise(
-            "Association between mantle temperature and volcanism"))
+    def test_missing_url(self):
+        path = self._write_config({"journals": [self._entry(url="")]})
+        with self.assertRaises(jw.JournalConfigError):
+            jw.load_config(path)
 
-    def test_nature_news_doi_is_dropped(self):
-        entry = {"key": "nature", "name": "Nature", "publisher": "", "issn": ""}
-        item = _item("10.1038/d41586-026-00001-1", "Earth inside out")
-        self.assertIsNone(journal_watch._build_candidate(item, entry, TODAY))
-        research = _item("10.1038/s41586-026-00001-1", "Earth inside out")
-        self.assertIsNotNone(
-            journal_watch._build_candidate(research, entry, TODAY))
+    def test_volume_template_requires_volumes(self):
+        path = self._write_config(
+            {"journals": [self._entry(
+                parser="epsl", url="", url_template="https://example.org/vol/{volume}"
+            )]}
+        )
+        with self.assertRaises(jw.JournalConfigError):
+            jw.load_config(path)
 
-    def test_future_issue_date_falls_back_to_created(self):
-        item = _item("10.1016/j.epsl.2026.1", "A paper", published=(2027, 1),
-                     created="2026-10-24T08:00:00Z")
-        display, sortable = journal_watch._best_date(item, TODAY)
-        self.assertEqual(display, "2026-10-24")
-        self.assertEqual(sortable, "2026-10-24")
+    def test_page_urls_expand_volumes(self):
+        path = self._write_config(
+            {"journals": [self._entry(
+                parser="epsl", url="",
+                url_template="https://example.org/vol/{volume}",
+                volumes=[699, 698],
+            )]}
+        )
+        entry = jw.load_config(path)["journals"][0]
+        self.assertEqual(
+            jw.page_urls(entry),
+            ["https://example.org/vol/699", "https://example.org/vol/698"],
+        )
 
 
 class ScanTests(unittest.TestCase):
-    def _entries(self):
-        return [
-            {"key": "j1", "name": "Journal One", "issn": "1111-1111",
-             "publisher": "", "enabled": True, "keywords": ["earth*", "mars"]},
-            {"key": "j2", "name": "Journal Two", "issn": "2222-2222",
-             "publisher": "", "enabled": True, "keywords": []},
-        ]
+    @staticmethod
+    def distinct_pages(entry, url):
+        return NATURE_PAGE if entry["key"] == "nature" else NGEO_PAGE
 
-    def _scan(self, temp, responses, limit=20, sort="date", journal_keys=None):
-        path = _write_config(temp, _config(self._entries()))
-
-        def fetcher(entry, since, until, rows, mailto):
-            return list(responses.get(entry["key"], [])), None
-
-        return journal_watch.scan(
-            days=7, limit=limit, sort=sort, journal_keys=journal_keys,
-            config_file=path, today=TODAY, fetcher=fetcher,
+    def setUp(self):
+        self.directory = Path(tempfile.mkdtemp())
+        self.config = self.directory / "journals.json"
+        self.config.write_text(
+            json.dumps(
+                {
+                    "defaults": {"days": 0, "limit": 0, "sort": "journal"},
+                    "journals": [
+                        {
+                            "key": "nature", "name": "Nature", "parser": "nature",
+                            "url": "https://example.org/nature",
+                        },
+                        {
+                            "key": "ngeo", "name": "Nature Geoscience", "parser": "nature",
+                            "url": "https://example.org/ngeo",
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
         )
 
-    def test_scan_dedupes_and_drops_noise(self):
-        with tempfile.TemporaryDirectory() as temp:
-            responses = {
-                "j1": [
-                    _item("10.1/a", "Earth's inner core"),
-                    _item("10.1/a", "Earth's inner core"),  # duplicate DOI
-                    _item("10.1/b", "Correction to: Earth's core"),
-                    _item("10.1/c", "Salt marsh methane"),
-                    _item("10.1/d", "Mars quakes today"),
-                ],
-                "j2": [
-                    _item("10.2/x", "A different paper"),
-                    _item("10.1/a", "Earth's inner core"),  # cross-journal dupe
-                ],
-            }
-            payload = self._scan(temp, responses)
-            dois = [item["doi"] for item in payload["candidates"]]
-            self.assertEqual(dois.count("10.1/a"), 1)
-            self.assertIn("10.1/d", dois)
-            self.assertIn("10.2/x", dois)
-            self.assertNotIn("10.1/b", dois)
-            self.assertNotIn("10.1/c", dois)
-            self.assertEqual(payload["total"], 3)
+    def test_scan_numbers_and_groups(self):
+        payload = jw.scan(
+            config_file=self.config, fetcher=self.distinct_pages
+        )
+        self.assertEqual(payload["total"], 4)
+        self.assertEqual([group["name"] for group in payload["groups"]],
+                         ["Nature", "Nature Geoscience"])
+        self.assertEqual([item["index"] for item in payload["candidates"]], [1, 2, 3, 4])
+        self.assertEqual(payload["scanned"], 2)
+        self.assertEqual(payload["pages"], 2)
 
-    def test_limit_is_round_robin_across_journals(self):
-        with tempfile.TemporaryDirectory() as temp:
-            responses = {
-                "j1": [
-                    _item("10.1/{}".format(n), "Earth paper {}".format(n),
-                          published=(2026, 10, 20 - n))
-                    for n in range(4)
-                ],
-                "j2": [
-                    _item("10.2/{}".format(n), "Other paper {}".format(n),
-                          published=(2026, 10, 20 - n))
-                    for n in range(4)
-                ],
-            }
-            payload = self._scan(temp, responses, limit=4)
-            self.assertEqual(payload["total"], 4)
-            self.assertEqual(payload["total_found"], 8)
-            self.assertTrue(payload["truncated"])
-            counts = {}
-            for item in payload["candidates"]:
-                counts[item["journal_key"]] = counts.get(item["journal_key"], 0) + 1
-            self.assertEqual(counts, {"j1": 2, "j2": 2})
+    def test_scan_dedupes_same_doi(self):
+        def fetcher(entry, url):
+            return NATURE_PAGE
 
-    def test_sort_by_journal_groups_in_config_order(self):
-        with tempfile.TemporaryDirectory() as temp:
-            responses = {
-                "j1": [_item("10.1/a", "Earth paper", published=(2026, 10, 19))],
-                "j2": [_item("10.2/b", "Other paper", published=(2026, 10, 20))],
-            }
-            payload = self._scan(temp, responses, sort="journal")
-            self.assertEqual([group["key"] for group in payload["groups"]],
-                             ["j1", "j2"])
-            self.assertEqual([item["index"] for item in payload["candidates"]],
-                             [1, 2])
+        payload = jw.scan(config_file=self.config, fetcher=fetcher)
+        self.assertEqual(payload["total"], 2)
+        self.assertEqual(payload["total_found"], 2)
 
-    def test_journal_key_filter_and_unknown_key(self):
-        with tempfile.TemporaryDirectory() as temp:
-            responses = {"j1": [_item("10.1/a", "Earth paper")],
-                         "j2": [_item("10.2/b", "Other paper")]}
-            payload = self._scan(temp, responses, journal_keys=["j2"])
-            self.assertEqual([item["journal_key"] for item in payload["candidates"]],
-                             ["j2"])
-            with self.assertRaises(journal_watch.ScanError):
-                self._scan(temp, responses, journal_keys=["missing"])
+    def test_limit_is_round_robin(self):
+        payload = jw.scan(
+            config_file=self.config, fetcher=self.distinct_pages, limit=2
+        )
+        self.assertEqual(payload["total"], 2)
+        self.assertEqual({item["journal_key"] for item in payload["candidates"]},
+                         {"nature", "ngeo"})
+        self.assertTrue(payload["truncated"])
 
-    def test_errors_are_reported_without_losing_other_journals(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path = _write_config(temp, _config(self._entries()))
+    def test_days_filters_dated_entries_only(self):
+        undated = """
+        <article class="c-card">
+          <h3 class="c-card__title"><a href="/articles/undated">Undated</a></h3>
+        </article>
+        """
 
-            def fetcher(entry, since, until, rows, mailto):
-                if entry["key"] == "j1":
-                    return [], "HTTP 429"
-                return [_item("10.2/b", "Other paper")], None
+        def fetcher(entry, url):
+            return (NATURE_PAGE if entry["key"] == "nature" else NGEO_PAGE) + undated
 
-            payload = journal_watch.scan(
-                days=7, limit=20, config_file=path, today=TODAY, fetcher=fetcher)
-            status = {entry["key"]: entry for entry in payload["journals"]}
-            self.assertEqual(status["j1"]["status"], "error")
-            self.assertEqual(status["j1"]["error"], "HTTP 429")
-            self.assertEqual(status["j2"]["status"], "ok")
-            self.assertEqual(payload["total"], 1)
+        payload = jw.scan(
+            config_file=self.config, fetcher=fetcher,
+            days=1, today=datetime.date(2026, 10, 24),
+        )
+        self.assertEqual(payload["window"]["filtered"], 4)
+        self.assertTrue(all(item["title"] == "Undated" for item in payload["candidates"]))
+        self.assertTrue(any(item["sort_date"] == "" for item in payload["candidates"]))
 
+    def test_error_and_challenge_status(self):
+        def fetcher(entry, url):
+            if entry["key"] == "nature":
+                raise BrowserChallenge("请完成人机验证")
+            raise RuntimeError("network down")
 
-class RenderTests(unittest.TestCase):
-    def test_markdown_numbers_items_and_stops_before_extraction(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path = _write_config(temp, _config([
-                {"key": "j1", "name": "Journal One", "issn": "1111-1111"},
-            ]))
+        payload = jw.scan(config_file=self.config, fetcher=fetcher)
+        statuses = {status["key"]: status for status in payload["journals"]}
+        self.assertEqual(statuses["nature"]["status"], "challenge")
+        self.assertEqual(statuses["ngeo"]["status"], "error")
+        self.assertEqual(payload["total"], 0)
 
-            def fetcher(entry, since, until, rows, mailto):
-                return [_item("10.1/a", "Earth's core", abstract="An abstract.")], None
+    def test_unknown_journal_key(self):
+        with self.assertRaises(jw.ScanError):
+            jw.scan(config_file=self.config, fetcher=lambda e, u: "", journal_keys=["x"])
 
-            payload = journal_watch.scan(
-                days=7, limit=20, config_file=path, today=TODAY, fetcher=fetcher)
-            markdown = journal_watch.render_markdown(payload)
-            self.assertIn("**[1] Earth's core**", markdown)
-            self.assertIn("10.1/a", markdown)
-            self.assertIn("不得建立证据包", markdown)
-            self.assertIn("不会触发任何抽取", markdown)
-            self.assertIn("--doi", markdown)
+    def test_translation_is_rendered_next_to_the_english_title(self):
+        payload = jw.scan(
+            config_file=self.config,
+            fetcher=lambda entry, url: NATURE_PAGE,
+            translate=True,
+            translator=lambda title: "中文 " + title,
+        )
+        self.assertTrue(all(item["title_zh"] for item in payload["candidates"]))
+        self.assertEqual(payload["translation"]["translated"], 2)
+        markdown = jw.render_markdown(payload)
+        self.assertIn("中文（机译）：中文 Mantle mixing", markdown)
+        self.assertIn("仅供检索", markdown)
+        console = jw.render_console(payload)
+        self.assertIn("中文：中文 Mantle mixing", console)
 
-    def test_write_scan_creates_latest_files(self):
-        with tempfile.TemporaryDirectory() as temp:
-            scan_dir = Path(temp) / "journal-scan"
-            with mock.patch.object(journal_watch, "SCAN_DIR", scan_dir), \
-                 mock.patch.object(journal_watch, "LATEST_MD", scan_dir / "latest.md"), \
-                 mock.patch.object(journal_watch, "LATEST_JSON", scan_dir / "latest.json"):
-                paths = journal_watch.write_scan({
-                    "window": {"from": "2026-10-17", "to": "2026-10-24", "days": 7},
-                    "config": "journals.json", "sort": "date", "limit": 20,
-                    "scanned": 1, "total_found": 0, "total": 0,
-                    "truncated": False, "journals": [], "groups": [],
-                    "candidates": [],
-                })
-                self.assertTrue(Path(paths["markdown"]).is_file())
-                self.assertTrue(Path(paths["json"]).is_file())
-                self.assertTrue((scan_dir / "latest.md").is_file())
+    def test_scan_without_translation_has_no_chinese_line(self):
+        payload = jw.scan(
+            config_file=self.config, fetcher=lambda entry, url: NATURE_PAGE
+        )
+        self.assertFalse(payload["translation"]["enabled"])
+        self.assertNotIn("中文（机译）", jw.render_markdown(payload))
+
+    def test_render_stops_before_extraction(self):
+        payload = jw.scan(
+            config_file=self.config,
+            fetcher=lambda entry, url: NATURE_PAGE,
+            limit=1,
+        )
+        markdown = jw.render_markdown(payload)
+        self.assertIn("候选清单，尚未精读", markdown)
+        self.assertIn("不会触发任何抽取或写作", markdown)
+        self.assertIn("回复要精读的编号", markdown)
+        self.assertNotIn("--doi \"<选中的 DOI>\"", markdown.replace("`", ""))
+
+        console = jw.render_console(payload)
+        self.assertIn("脚本不会自动抽取", console)
+        self.assertIn("[1]", console)
+
+    def test_write_scan_writes_latest(self):
+        payload = jw.scan(
+            config_file=self.config,
+            fetcher=lambda entry, url: NATURE_PAGE,
+        )
+        scan_dir = self.directory / "scan"
+        with mock.patch.object(jw, "SCAN_DIR", scan_dir), \
+                mock.patch.object(jw, "LATEST_MD", scan_dir / "latest.md"), \
+                mock.patch.object(jw, "LATEST_JSON", scan_dir / "latest.json"):
+            paths = jw.write_scan(payload)
+        self.assertTrue(Path(paths["latest_markdown"]).is_file())
+        self.assertTrue(Path(paths["latest_json"]).is_file())
+        self.assertIn("候选清单", Path(paths["latest_markdown"]).read_text(encoding="utf-8"))
 
 
 class InitTests(unittest.TestCase):
-    def test_init_does_not_overwrite_existing_user_copy(self):
-        with tempfile.TemporaryDirectory() as temp:
-            default = Path(temp) / "journals.json"
-            user = Path(temp) / ".geo-reader" / "journals.json"
-            default.write_text('{"journals": []}', encoding="utf-8")
-            user.parent.mkdir()
-            user.write_text('{"mine": true}', encoding="utf-8")
-            with mock.patch.object(journal_watch, "DEFAULT_JOURNALS_PATH", default), \
-                 mock.patch.object(journal_watch, "USER_JOURNALS_PATH", user):
-                result = journal_watch.init_user_config()
-                self.assertFalse(result["created"])
-                self.assertEqual(user.read_text(encoding="utf-8"), '{"mine": true}')
+    def test_does_not_overwrite(self):
+        directory = Path(tempfile.mkdtemp())
+        shipped = directory / "journals.json"
+        user = directory / "user" / "journals.json"
+        shipped.write_text('{"journals": []}', encoding="utf-8")
+        user.parent.mkdir()
+        user.write_text('{"user": true}', encoding="utf-8")
+        with mock.patch.object(jw, "DEFAULT_JOURNALS_PATH", shipped), \
+                mock.patch.object(jw, "USER_JOURNALS_PATH", user):
+            result = jw.init_user_config()
+        self.assertFalse(result["created"])
+        self.assertIn('"user": true', user.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

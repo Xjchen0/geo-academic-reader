@@ -1,4 +1,4 @@
-# AGENTS.md — geo-academic-reader v0.3.3
+# AGENTS.md — geo-academic-reader v0.4.0
 
 > **Read this file before doing any literature task in this workspace.**
 > The workspace turns papers (DOI / URL / PDF) into a **raw evidence pack**, then the agent writes a **VS Code-ready literature note** from that evidence. The Python pipeline never writes review prose.
@@ -36,9 +36,9 @@ Use the agent's question UI when available (Qoder `AskUserQuestion`, Claude Code
 4. **Browser policy**: `auto` (reuse/launch Chrome, high-resolution figures first) / `existing` (only reuse CDP 9222) / `off` (HTTP/PDF fallback).
 5. **Note depth**: `brief` (1-page brief) / `standard` (IMRaD) / `deep` (per-figure reading).
 6. **Citation format**: `apa` / `nature` / `gbt7714`.
-7. **Journal list** for “找新文献”: `default` (the shipped `journals.json`, 30 journals) / `custom` (the user will supply names or ISSNs later).
+7. **Journal list** for “找新文献”: `default` (the shipped `journals.json`, 17 journal pages / sections) / `custom` (the user will supply page URLs or volume numbers later).
    - For `custom`, do not guess: run `python3 main.py --journals-init`, ask the user to edit `.geo-reader/journals.json`, and scan on a later turn.
-8. Optional: **agent name** and a **contact email** for polite Crossref/OpenAlex requests. Both may be skipped.
+8. Optional: **agent name** and a **contact email** for polite API requests. Both may be skipped.
 
 If the user says “use defaults”, take `zh-CN`, `vscode`, `balanced`, `auto`, `deep`, `apa` and the shipped journal list. Say which defaults were used.
 
@@ -186,16 +186,30 @@ Counting and verification rules:
 - Duplicate DOIs, entries without a DOI, a missing reference section and a missing 文献坐标 section are reported by `--check-note`.
 - Do not pad the list with papers you did not read. Three well-understood rivals are worth more than ten decorative citations; if the count is below target, say what is missing instead of inventing entries.
 
-### 1.6 “找新文献” = 扫描期刊清单，先列候选，等待选择（P0）
+### 1.6 “找新文献” = 打开期刊官网，只列候选，等待选择（P0）
 
 当用户说“找新文献”“最近有什么新文章”“推荐文献”“看看期刊新文章”时：
 
-1. **只扫描配置好的期刊清单**。不要用 OpenAlex / WebSearch 按主题检索，不要从现有笔记、`INDEX.md` 或对话上下文推断用户“可能想看什么”。
-2. 运行 `python3 main.py --new-literature --days 7`。它读取 `journals.json`（个人副本 `.geo-reader/journals.json` 优先），按 ISSN 从 Crossref 拉取每本期刊的新条目，写入 `.geo-reader/journal-scan/latest.md` 与 `latest.json`。
-3. 把编号候选（标题、期刊、日期、DOI）呈现给用户，然后**停止**。本轮不要运行 `--doi`，不要创建 `.raw/<slug>/`，不要写 `papers/*.md`。
-4. 只有用户明确给出编号或 DOI 后，才逐篇执行 `--doi` 并进入精读流程。用户选了多篇时，一篇一篇建证据包；`papers/INDEX.md` 由父 Agent 串行更新。
+1. **只打开配置好的期刊页面**。不要用 OpenAlex / WebSearch 按主题检索，不要从现有笔记、`INDEX.md` 或对话上下文推断用户“可能想看什么”。
+2. 运行 `python3 main.py --new-literature`。它读取 `journals.json`（个人副本 `.geo-reader/journals.json` 优先），用 Chrome/CDP 逐页打开每本期刊的 research-articles、current issue、early publication 或最近卷期页面，按页面自己的条目解析标题、DOI 和日期，写入 `.geo-reader/journal-scan/latest.md` 与 `latest.json`。
+3. 默认 `--days 0`：页面列出什么就列什么，不加日期窗口。需要只看最近几天时再传 `--days N`；无日期的条目（例如 EPSL 卷期页）仍保留。
+4. 把编号候选（**英文原题 + 中文机译标题**、期刊、日期、DOI）呈现给用户，然后**停止**。本轮不要运行 `--doi`，不要创建 `.raw/<slug>/`，不要写 `papers/*.md`。
+5. 只有用户明确给出编号或 DOI 后，才逐篇执行 `--doi` 并进入精读流程。用户选了多篇时，一篇一篇建证据包；`papers/INDEX.md` 由父 Agent 串行更新。
 
-扫描为空或部分期刊报错时，报告日期窗口、扫描过的期刊和错误原因，并建议加大 `--days` 或编辑清单；**不得**改用主题搜索来“补”一个列表。用户明确要求“找某个主题的新文献”时，说明这是主题检索（不是期刊清单扫描），先确认口径再动手。关键词过滤只来自 `journals.json` 的静态配置，不能根据对话临时改写。
+**中文标题**：扫描默认调用 Bing 翻译，为每条候选补 `title_zh`，写入 `latest.md` 的“中文（机译）：…”一行和 `latest.json` 的 `title_zh` 字段。约定如下：
+
+- 中文标题是**机器翻译，仅供检索**；英文原题才是准据。向用户呈现时保留英文原题，不要把机译标题当成论文正式标题。
+- 翻译结果缓存在 `.geo-reader/journal-scan/translations.json`（按英文原题去重），重跑只翻译新条目。地学术语在读取时做后编辑（如 fugacity→逸度、sub-arc→弧下、large igneous province→大火成岩省）。
+- 少数条目可能因限流或服务不可用而显示“暂缺”；如实说明并建议重跑，**不得**自行编造中文标题。
+- 需要纯英文清单时传 `--no-translate`。
+
+扫描为空或部分期刊报错时，报告扫描过的页面和错误原因，并建议检查清单；**不得**改用主题搜索来“补”一个列表。用户明确要求“找某个主题的新文献”时，说明这是主题检索（不是期刊清单扫描），先确认口径再动手。
+
+`journals.json` v2 的每一项是一个页面：`key`、`name`、`parser`、`url`（或 `url_template` + `volumes`）、`enabled`，可选 `wait`、`scroll`、`ready`、`challenge_timeout`。`parser` 决定用哪个解析器，当前支持 `nature`、`science_first`、`science_current`、`science_advances`、`epsl`、`agu`、`geology_current`、`geology_early`、`gji`、`pnas`。默认清单对应 17 个区块（Nature 系列 4 个页面、Science First Release / Current、Science Advances、EPSL 4 个卷、AGU 5 本、Geology 2 个页面、GJI、PNAS）。
+
+- **Cloudflare / 人机验证**：浏览器停在验证页时，脚本只等待并报告，不自动刷新。让用户在打开的 Chrome 窗口完成验证，然后重跑同一条命令。
+- **EPSL 卷号会前进**：清单用 `vol/699/suppl/C` 这类卷期页；结果异常少时先更新 `volumes`。
+- **不按关键词过滤**：页面列出的就是候选。Nature / Science 这类综合刊会包含非地学论文，这是清单本身的定义，不要临时加主题过滤。
 
 ---
 
@@ -213,10 +227,11 @@ Counting and verification rules:
 | `papers/INDEX.md` | Note catalog, maintained by `--index`. |
 | `templates/paper_note.md` | Mandatory single-paper note template. |
 | `templates/literature_review.md` | Multi-paper review template. |
-| `journals.json` | Shipped journal watch list (ISSN, enabled flag, static keyword filter). |
+| `journals.json` | Shipped journal page list (parser, URL or volume template, enabled flag, per-page waits). |
 | `.geo-reader/journals.json` | User copy, preferred over the shipped list; created by `--journals-init`. |
 | `.geo-reader/journal-scan/latest.md` | Latest numbered candidate list; the agent reads this, then waits. |
-| `.geo-reader/journal-scan/scan-<date>.json` | Machine-readable result of the same scan. |
+| `.geo-reader/journal-scan/scan-<date>.json` | Machine-readable result of the same scan (per-page status and errors). |
+| `.geo-reader/journal-scan/translations.json` | Chinese-title cache (English title → machine translation); git-ignored. |
 | `PROMPTS.md` | Copy-paste prompts for users, including first-run triggers. |
 | `rules/` | Scraping, KaTeX, troubleshooting details. |
 
@@ -226,15 +241,17 @@ Counting and verification rules:
 
 ## 3. Standard operating procedure
 
-### Step 0 — “找新文献”：only list, then stop (P0)
+### Step 0 — “找新文献”：open the journal pages, list only, then stop (P0)
 
 ```bash
-python3 main.py --new-literature --days 7
-# Scan only a few journals: --journal epsl --journal gca
+python3 main.py --new-literature
+# Optional date filter (0 or omitted = page as-is): --days 3
+# Scan only a few pages: --journal epsl --journal geology_early
+# English-only list: --no-translate
 # Create the editable user copy: python3 main.py --journals-init
 ```
 
-Read `.geo-reader/journal-scan/latest.md`, present the numbered candidates to the user, and **end the turn**. Do not call `--doi`, do not create `.raw/`, and do not write a note until the user replies with numbers or DOIs. Details and edge cases: §1.6.
+The scan opens each configured page in Chrome/CDP, parses the page's own entries, adds a cached Chinese machine translation of each title, and writes `.geo-reader/journal-scan/latest.md`. Read that file, present the numbered candidates — English title with the Chinese line beneath it, journal, date, DOI — to the user, and **end the turn**. Do not call `--doi`, do not create `.raw/`, and do not write a note until the user replies with numbers or DOIs. Never invent a Chinese title when translation failed; say it is missing. Details and edge cases: §1.6.
 
 ### Step 1 — Environment check
 
@@ -376,8 +393,8 @@ For a review covering multiple papers, use `templates/literature_review.md`; eve
 ## 7. Completion checklist
 
 - [ ] Profile exists (or onboarding completed in this conversation and saved).
-- [ ] “找新文献”只扫描了 `journals.json` / `.geo-reader/journals.json`，没有按对话主题自选文献。
-- [ ] 候选清单以编号呈现，并在用户选择前停止；未创建证据包或笔记。
+- [ ] “找新文献”只打开了 `journals.json` / `.geo-reader/journals.json` 里的期刊页面，没有按对话主题自选文献。
+- [ ] 候选清单以编号呈现（英文原题 + 中文机译标题），并在用户选择前停止；未创建证据包或笔记。
 - [ ] `doctor.py` clean, or limitations stated.
 - [ ] Evidence pack exists: `paper.json`, `fulltext.md`, `figures/manifest.json`.
 - [ ] Figures preferred from browser; PDF fallback explicitly marked.
@@ -397,10 +414,14 @@ For a review covering multiple papers, use `templates/literature_review.md`; eve
 
 | Symptom | Action |
 | :--- | :--- |
-| “找新文献”没有先给清单 | 运行 `python3 main.py --new-literature --days 7`；不要改用主题搜索或从笔记推断 |
-| 扫描结果为 0 | 加大 `--days`；检查 `.geo-reader/journals.json` 的 `enabled` / ISSN；Elsevier 条目可能按 created 日期收录 |
+| “找新文献”没有先给清单 | 运行 `python3 main.py --new-literature`；不要改用主题搜索或从笔记推断 |
+| 扫描结果为 0 | 检查 `.geo-reader/journals.json` 的 `url` / `enabled`；EPSL 先更新 `volumes`；页面改版后可能需要更新对应 `parser` |
 | 期刊清单缺失 / JSON 错误 | `python3 main.py --journals-init`；确需覆盖个人副本时用 `--force`，或恢复 `journals.json` |
-| 扫描出现 429 | 脚本已全局限速并重试；稍后重跑，不要用并发脚本加压 |
+| 候选缺少中文标题 | 翻译服务限流或不可用；重跑 `python3 main.py --new-literature` 会补齐（缓存已译条目），不要自行编造；只要英文清单时用 `--no-translate` |
+| 中文标题有术语错误 | 缓存保存原文机译，读取时应用 `scripts/translate.py` 的术语后编辑；补充规则即可，无需清缓存 |
+| 个人清单是旧版 ISSN/Crossref 格式 | 备份 `.geo-reader/journals.json`，再运行 `python3 main.py --journals-init --force`；新清单按页面 URL 配置 |
+| 扫描卡在 Cloudflare / 人机验证 | 在打开的 Chrome 窗口手动完成验证，然后重跑同一条命令；脚本不会自动刷新 |
+| 某本期刊一直解析不到条目 | 把该页面的 HTML 存下来检查选择器；`parser` 与页面结构不匹配时条目会为 0，而不是编造 |
 | No profile | Onboard in conversation, then write `.geo-reader/profile.json`; never ask for `--setup` |
 | Chrome not running | `python3 main.py --doi ... --browser auto` (launches it) |
 | Cloudflare challenge | Complete the check in the opened Chrome window; retry with `--wait 8` |

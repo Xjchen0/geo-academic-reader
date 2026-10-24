@@ -1,6 +1,6 @@
 # geo-academic-reader
 
-[![Version](https://img.shields.io/badge/version-0.3.3-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-green.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
@@ -94,7 +94,7 @@ The agent asks, in one or two batches:
 | Browser policy | `auto`, `existing`, `off` | Whether it may launch Chrome, reuse port 9222, or stay on HTTP/PDF |
 | Note depth | `brief`, `standard`, `deep` | One-page brief, standard IMRaD, or per-figure deep read |
 | Citation format | `apa`, `nature`, `gbt7714` | Reference section style |
-| Journal list | the shipped 30 journals, or custom | Which journals “find new papers” scans |
+| Journal list | the shipped 17 journal pages / sections, or custom | Which journal pages “find new papers” opens |
 
 Defaults are `zh-CN`, VS Code, balanced, browser auto, deep, APA, and the shipped journal list. Saying “use defaults” is enough. The profile is local and git-ignored; the agent checks it with `python3 main.py --profile --json` before each task and never re-onboards once it exists.
 
@@ -105,14 +105,18 @@ Defaults are `zh-CN`, VS Code, balanced, browser auto, deep, APA, and the shippe
 ### 0. Find new papers (list first)
 
 ```bash
-python3 main.py --new-literature --days 7
-python3 main.py --new-literature --days 14 --journal epsl --journal gca
-python3 main.py --journals-init   # create the editable user list
+python3 main.py --new-literature
+python3 main.py --new-literature --journal epsl --journal geology_early
+python3 main.py --new-literature --days 3   # optional date filter
+python3 main.py --new-literature --no-translate  # English-only list
+python3 main.py --journals-init            # create the editable user list
 ```
 
-The scan uses the ISSNs in `journals.json` (the user copy `.geo-reader/journals.json` takes precedence), queries Crossref for records published or deposited in the window, deduplicates them, and drops corrections, errata, editorials, retractions, and society front matter. It writes `.geo-reader/journal-scan/latest.md` and prints a numbered list.
+The scan opens each configured page in Chrome/CDP — Nature research-articles, Science First Release and Current, Science Advances, EPSL volumes, AGU journal pages, Geology current and early publication, GJI, PNAS Earth — and parses the entries the page itself lists. It writes `.geo-reader/journal-scan/latest.md` and prints a numbered list. With `--days 0` (the default) the page is shown as-is; undated entries such as EPSL volume pages are kept.
 
-This step **only lists candidates**. No evidence pack is created, and the agent must wait for your numbers or DOIs before reading anything. Edit `enabled`, `keywords`, and `defaults.days` in the list to change scope; keywords are static configuration, never inferred from the conversation.
+Every candidate also gets a **Chinese title** from Bing, labelled “机译，仅供检索”; the English title stays authoritative. Translations are cached in `.geo-reader/journal-scan/translations.json`, so a rerun only translates new entries, and geoscience terms are post-edited (fugacity→逸度, sub-arc→弧下). Entries that hit a rate limit show “暂缺”; rerun to fill them rather than inventing a title.
+
+This step **only lists candidates**. No evidence pack is created, and the agent must wait for your numbers or DOIs before reading anything. Edit `enabled`, `url` / `volumes`, and `defaults.days` in the list to change scope. If a page stops at a Cloudflare check, complete it in the opened Chrome window and rerun the same command; the scan does not refresh on its own.
 
 ### 1. Extract
 
@@ -159,7 +163,7 @@ python3 main.py --list
 After a task, run `--check-update` once. It reads the GitHub releases API, caches the answer for six hours, and exits 0 when GitHub is unreachable, so it never fails an offline session.
 
 ```bash
-python3 main.py --check-update              # 0.3.2 → 0.3.3, or "up to date"
+python3 main.py --check-update              # e.g. 0.3.3 → 0.4.0, or "up to date"
 python3 main.py --update --dry-run          # show the target
 python3 main.py --update                    # update, keep your work
 ```
@@ -237,7 +241,8 @@ python3 main.py --doi DOI               Extract an evidence pack by DOI
 python3 main.py --url URL               Extract by article URL
 python3 main.py --pdf PATH              Extract from a local PDF
 python3 main.py --batch-pdfs            Process every PDF in input_pdfs/
-python3 main.py --new-literature        List candidates from journals.json (no extraction)
+python3 main.py --new-literature        List candidates from the configured journal pages (Chinese titles included, no extraction)
+python3 main.py --new-literature --no-translate  Skip titles, English only
 python3 main.py --journals-init         Create .geo-reader/journals.json
 python3 main.py --check-note [NOTE]     Check one note, or all papers/*.md
 python3 main.py --index NOTE            Add/update a row in papers/INDEX.md
@@ -261,7 +266,7 @@ geo-academic-reader/
 ├── AGENTS.md                     Agent contract, onboarding, SOP
 ├── PROMPTS.md                    Copy-paste task prompts
 ├── SKILL.md                      Skill manifest and condensed contract
-├── journals.json                 Shipped journal list (ISSN, flags, keywords)
+├── journals.json                 Shipped journal page list (parsers, URLs, volumes)
 ├── input_pdfs/                   Drop-zone for raw PDFs
 ├── papers/
 │   ├── INDEX.md                  Literature catalog
@@ -273,6 +278,7 @@ geo-academic-reader/
 │   ├── figures/manifest.json
 │   └── README.md
 ├── .geo-reader/                  Local profile, journal list and scan output (git-ignored)
+│   └── journal-scan/             latest.md plus translations.json (Chinese-title cache)
 ├── templates/                    Note and review templates
 ├── rules/                        Markdown, journal, troubleshooting references
 ├── scripts/                      Extraction, QA, onboarding schema, CLI

@@ -227,6 +227,22 @@ EXTRACT_JS = r"""
 """
 
 
+SCROLL_HTML_JS = r"""
+(async () => {
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  let lastHeight = -1;
+  for (let i = 0; i < 24; i += 1) {
+    window.scrollTo(0, document.body.scrollHeight);
+    await sleep(500);
+    const height = document.body.scrollHeight;
+    if (height === lastHeight) break;
+    lastHeight = height;
+  }
+  window.scrollTo(0, 0);
+  return document.documentElement.outerHTML;
+})()
+"""
+
 FETCH_IMAGE_JS = r"""
 (async () => {
   try {
@@ -282,6 +298,144 @@ class BrowserSession:
             except Exception:
                 pass
         return False
+
+    def fetch_html(
+        self,
+        url: str,
+        wait_seconds: float = 4.0,
+        challenge_timeout: int = 60,
+        scroll: bool = False,
+        ready_selector: str = "",
+        ready_timeout: float = 30.0,
+    ) -> str:
+        """Return the fully rendered HTML of one page.
+
+        Used by the journal watch: publisher index pages are JavaScript-heavy
+        and several are behind Cloudflare, so a plain HTTP GET is not enough.
+        The tab is closed when the ``with`` block exits.
+        """
+        return asyncio.run(
+            self._fetch_html_async(
+                url, wait_seconds, challenge_timeout, scroll, ready_selector, ready_timeout
+            )
+        )
+
+    async def _fetch_html_async(
+        self, url, wait_seconds, challenge_timeout, scroll, ready_selector, ready_timeout
+    ):
+        try:
+            import websockets
+        except ImportError:
+            raise BrowserError("缺少 websockets。请运行: pip install websockets")
+
+        state = {"id": 0}
+        challenge_markers = (
+            "just a moment", "attention required", "checking your browser",
+            "verify you are human", "enable javascript and cookies",
+        )
+
+        async with websockets.connect(
+            self.ws_url, max_size=None, open_timeout=15, close_timeout=5
+        ) as websocket:
+
+            async def send(method, params=None):
+                state["id"] += 1
+                message_id = state["id"]
+                await websocket.send(
+                    json.dumps({"id": message_id, "method": method, "params": params or {}})
+                )
+                while True:
+                    raw = await asyncio.wait_for(websocket.recv(), timeout=self.timeout)
+                    message = json.loads(raw)
+                    if message.get("id") != message_id:
+                        continue
+                    if "error" in message:
+                        raise BrowserError(
+                            "CDP {} 失败: {}".format(method, message["error"])
+                        )
+                    return message.get("result", {})
+
+            async def evaluate(expression, await_promise=False):
+                return await send(
+                    "Runtime.evaluate",
+                    {
+                        "expression": expression,
+                        "returnByValue": True,
+                        "awaitPromise": await_promise,
+                    },
+                )
+
+            async def page_title():
+                result = await evaluate("document.title")
+                return result.get("result", {}).get("value", "") or ""
+
+            await send("Page.enable")
+            navigation = await send("Page.navigate", {"url": url})
+            if navigation.get("errorText"):
+                raise BrowserError("页面导航失败: {}".format(navigation["errorText"]))
+
+            deadline = time.time() + self.timeout
+            while time.time() < deadline:
+                # ``about:blank`` is also "complete", so check the URL too;
+                # otherwise a slow navigation is captured as an empty page.
+                result = await evaluate(
+                    "JSON.stringify({state: document.readyState, href: location.href})"
+                )
+                raw_state = result.get("result", {}).get("value") or "{}"
+                try:
+                    page_state = json.loads(raw_state)
+                except ValueError:
+                    page_state = {}
+                href = str(page_state.get("href") or "")
+                if page_state.get("state") == "complete" and href and href != "about:blank":
+                    break
+                await asyncio.sleep(0.5)
+
+            if wait_seconds:
+                await asyncio.sleep(wait_seconds)
+
+            title = await page_title()
+            if any(marker in title.lower() for marker in challenge_markers):
+                print(
+                    "    [browser] 检测到人机验证，请在打开的 Chrome 窗口完成验证"
+                    "（最多等待 {} 秒）...".format(challenge_timeout)
+                )
+                challenge_deadline = time.time() + challenge_timeout
+                while time.time() < challenge_deadline:
+                    await asyncio.sleep(2)
+                    title = await page_title()
+                    if not any(marker in title.lower() for marker in challenge_markers):
+                        break
+                else:
+                    raise BrowserChallenge(
+                        "Cloudflare/人机验证未通过。请在 Chrome 窗口手动完成验证后重试；"
+                        "脚本不会自动重复刷新。"
+                    )
+
+            if ready_selector:
+                selector_js = "!!document.querySelector({})".format(
+                    json.dumps(ready_selector)
+                )
+                ready_deadline = time.time() + ready_timeout
+                while time.time() < ready_deadline:
+                    result = await evaluate(selector_js)
+                    if result.get("result", {}).get("value"):
+                        break
+                    await asyncio.sleep(1.0)
+
+            if scroll:
+                result = await evaluate(SCROLL_HTML_JS, await_promise=True)
+            else:
+                result = await evaluate("document.documentElement.outerHTML")
+
+            if result.get("exceptionDetails"):
+                raise BrowserError(
+                    "页面脚本执行失败: {}".format(result["exceptionDetails"])
+                )
+            html = result.get("result", {}).get("value")
+            if not html:
+                raise BrowserError("页面未返回 HTML")
+            return html
 
     def extract(
         self,

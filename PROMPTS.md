@@ -34,26 +34,33 @@
 找新文献。
 
 要求：
-1. 只扫描 journals.json / .geo-reader/journals.json 里配置的期刊，不要按主题搜索，
+1. 只打开 journals.json / .geo-reader/journals.json 里配置的期刊页面，不要按主题搜索，
    也不要从我的笔记或这段对话猜我想看什么。
-2. 运行 python3 main.py --new-literature --days 7。
-3. 把编号候选（标题、期刊、日期、DOI）列给我，然后停下来等我选。
+2. 运行 python3 main.py --new-literature。
+3. 把编号候选（英文原题、中文标题、期刊、日期、DOI）列给我，然后停下来等我选。
+   中文标题用脚本给出的机译即可，标明“机译，仅供检索”；翻译缺失就写“暂缺”，不要自己编。
 4. 在我回复编号或 DOI 之前，不要运行 --doi，不要建 .raw/，不要写任何笔记。
-5. 如果窗口内没有条目或某本期刊报错，告诉我扫了哪些期刊、错误是什么，
-   并建议加大 --days 或改清单；不要用主题搜索补列表。
+5. 如果某本期刊页面报错或遇到人机验证，告诉我扫了哪些页面、错误是什么；
+   需要我手动点验证就说清楚。不要用主题搜索补列表。
 ```
 
 想改关注期刊：
 
 ```text
 python3 main.py --journals-init
-# 然后编辑 .geo-reader/journals.json：enabled、keywords、defaults.days / limit
+# 然后编辑 .geo-reader/journals.json：enabled、url / volumes、defaults.days / limit
 ```
 
 只想看某几本：
 
 ```text
-python3 main.py --new-literature --days 14 --journal epsl --journal gca --journal icarus
+python3 main.py --new-literature --journal epsl --journal geology_early --journal pnas
+```
+
+只要英文清单（不翻译标题）：
+
+```text
+python3 main.py --new-literature --no-translate
 ```
 
 ---
@@ -224,7 +231,7 @@ python3 main.py --new-literature --days 14 --journal epsl --journal gca --journa
 - 图片路径必须是 assets/<slug>/fig_XX.png（在 papers/ 内）；图注来自 manifest。
 - 不写“颠覆一切”“彻底终结”“完美解决”“前所未有”等措辞。
 - 经典文献不是单篇摘要：brief ≥3、standard ≥6、deep ≥10 篇外部文献，综述 ≥15 篇；每条外部文献给 DOI。
-- “找新文献”只扫描 journals.json / .geo-reader/journals.json，先给编号清单并等待选择；不得按主题或对话上下文自选，也不得在选择前抽取。
+- “找新文献”只扫描 journals.json / .geo-reader/journals.json，先给编号清单（英文原题 + 中文机译标题）并等待选择；不得按主题或对话上下文自选，也不得在选择前抽取。翻译缺失写“暂缺”，不得编造。
 - 引用表至少 5 行，必须写竞争解释与后续检验；不要只列支持本文的工作。
 - 不要用 > [!NOTE] 这类 GitHub 告警语法，VS Code 不渲染它；用 > **一句话结论** 加引用块。
 - 交付前必须运行 --check-note --fix，再运行 --index。

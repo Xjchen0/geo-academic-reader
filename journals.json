@@ -1,294 +1,178 @@
 {
-  "version": 1,
-  "description": "Journal watch list. Copy this file to .geo-reader/journals.json to customise it without touching the shipped defaults. The scan only reads this list; it never picks papers from your notes or the conversation.",
+  "version": 2,
+  "description": "Journal watch list copied from the user's own workflow (gongzhonghao2/fetch_journals_*.js). The scan opens these publisher pages in Chrome and lists what the page shows. Copy this file to .geo-reader/journals.json to customise it without touching the shipped defaults. It never searches by topic or infers papers from notes.",
   "defaults": {
-    "days": 7,
-    "limit": 80,
-    "sort": "date"
-  },
-  "keyword_sets": {
-    "earth_planetary": [
-      "earth*",
-      "mantle*",
-      "core",
-      "magma*",
-      "magmat*",
-      "volcan*",
-      "mineral*",
-      "geochem*",
-      "isotop*",
-      "meteorit*",
-      "planet*",
-      "mars",
-      "martian",
-      "moon",
-      "lunar",
-      "asteroid*",
-      "accretion*",
-      "chondrit*",
-      "siderophil*",
-      "volatil*",
-      "deep interior",
-      "exoplanet*",
-      "tecton*",
-      "lithospher*",
-      "geomagnet*",
-      "paleomagnet*",
-      "seism*",
-      "petrolog*",
-      "crust*",
-      "kimberlit*",
-      "diamond*",
-      "silicat*",
-      "planetary differentiation",
-      "magma ocean",
-      "core formation",
-      "early earth",
-      "deep earth",
-      "solar system",
-      "impact crater*"
-    ]
+    "days": 0,
+    "limit": 0,
+    "sort": "journal"
   },
   "journals": [
     {
       "key": "nature",
       "name": "Nature",
-      "issn": "0028-0836",
-      "publisher": "Springer Nature",
-      "enabled": true,
-      "keyword_set": "earth_planetary"
+      "parser": "nature",
+      "url": "https://www.nature.com/nature/research-articles",
+      "wait": 5,
+      "scroll": false,
+      "enabled": true
     },
     {
-      "key": "science",
-      "name": "Science",
-      "issn": "0036-8075",
-      "publisher": "AAAS",
-      "enabled": true,
-      "keyword_set": "earth_planetary"
-    },
-    {
-      "key": "nature-geoscience",
+      "key": "ngeo",
       "name": "Nature Geoscience",
-      "issn": "1752-0894",
-      "publisher": "Springer Nature",
-      "enabled": true,
-      "keywords": []
+      "parser": "nature",
+      "url": "https://www.nature.com/ngeo/research-articles",
+      "wait": 5,
+      "scroll": false,
+      "enabled": true
     },
     {
-      "key": "nature-communications",
+      "key": "ncomms",
       "name": "Nature Communications",
-      "issn": "2041-1723",
-      "publisher": "Springer Nature",
-      "enabled": true,
-      "keyword_set": "earth_planetary"
+      "parser": "nature",
+      "url": "https://www.nature.com/ncomms/research-articles",
+      "wait": 5,
+      "scroll": false,
+      "enabled": true
     },
     {
-      "key": "science-advances",
+      "key": "ncomms_web",
+      "name": "Nature Communications (Web)",
+      "parser": "nature",
+      "url": "https://www.nature.com/ncomms/research-articles?searchType=journalSearch&sort=PubDate&page=130",
+      "wait": 5,
+      "scroll": false,
+      "enabled": true
+    },
+    {
+      "key": "science_first",
+      "name": "Science",
+      "parser": "science_first",
+      "url": "https://www.science.org/toc/science/0/0",
+      "wait": 6,
+      "scroll": true,
+      "ready": "h3[class*=\"article-title\"]",
+      "enabled": true
+    },
+    {
+      "key": "sciadv",
       "name": "Science Advances",
-      "issn": "2375-2548",
-      "publisher": "AAAS",
-      "enabled": true,
-      "keyword_set": "earth_planetary"
-    },
-    {
-      "key": "pnas",
-      "name": "Proceedings of the National Academy of Sciences",
-      "issn": "0027-8424",
-      "publisher": "NAS",
-      "enabled": true,
-      "keyword_set": "earth_planetary"
-    },
-    {
-      "key": "nature-astronomy",
-      "name": "Nature Astronomy",
-      "issn": "2397-3366",
-      "publisher": "Springer Nature",
-      "enabled": true,
-      "keyword_set": "earth_planetary"
-    },
-    {
-      "key": "nature-reviews-ee",
-      "name": "Nature Reviews Earth & Environment",
-      "issn": "2662-138X",
-      "publisher": "Springer Nature",
-      "enabled": true,
-      "keywords": []
-    },
-    {
-      "key": "communications-ee",
-      "name": "Communications Earth & Environment",
-      "issn": "2662-4435",
-      "publisher": "Springer Nature",
-      "enabled": true,
-      "keywords": []
+      "parser": "science_advances",
+      "url": "https://www.science.org/toc/sciadv/current",
+      "wait": 6,
+      "scroll": true,
+      "ready": "h3[class*=\"article-title\"]",
+      "enabled": true
     },
     {
       "key": "epsl",
-      "name": "Earth and Planetary Science Letters",
-      "issn": "0012-821X",
-      "publisher": "Elsevier",
-      "enabled": true,
-      "keywords": []
+      "name": "EPSL",
+      "parser": "epsl",
+      "url_template": "https://www.sciencedirect.com/journal/earth-and-planetary-science-letters/vol/{volume}/suppl/C",
+      "volumes": [699, 698, 697, 696],
+      "wait": 6,
+      "scroll": true,
+      "ready": "a.article-content-title",
+      "enabled": true
     },
     {
-      "key": "gca",
-      "name": "Geochimica et Cosmochimica Acta",
-      "issn": "0016-7037",
-      "publisher": "Elsevier",
-      "enabled": true,
-      "keywords": []
+      "key": "grl",
+      "name": "GRL",
+      "parser": "agu",
+      "url": "https://agupubs.onlinelibrary.wiley.com/journal/19448007",
+      "wait": 5,
+      "scroll": true,
+      "ready": "div.issue-item",
+      "enabled": true
     },
     {
-      "key": "chemical-geology",
-      "name": "Chemical Geology",
-      "issn": "0009-2541",
-      "publisher": "Elsevier",
-      "enabled": true,
-      "keywords": []
+      "key": "jgrse",
+      "name": "JGR-Solid Earth",
+      "parser": "agu",
+      "url": "https://agupubs.onlinelibrary.wiley.com/journal/21699356",
+      "wait": 5,
+      "scroll": true,
+      "ready": "div.issue-item",
+      "enabled": true
     },
     {
-      "key": "earth-science-reviews",
-      "name": "Earth-Science Reviews",
-      "issn": "0012-8252",
-      "publisher": "Elsevier",
-      "enabled": true,
-      "keywords": []
+      "key": "jgrp",
+      "name": "JGR-Planets",
+      "parser": "agu",
+      "url": "https://agupubs.onlinelibrary.wiley.com/journal/21699100",
+      "wait": 5,
+      "scroll": true,
+      "ready": "div.issue-item",
+      "enabled": true
     },
     {
-      "key": "icarus",
-      "name": "Icarus",
-      "issn": "0019-1035",
-      "publisher": "Elsevier",
-      "enabled": true,
-      "keywords": []
+      "key": "tectonics",
+      "name": "Tectonics",
+      "parser": "agu",
+      "url": "https://agupubs.onlinelibrary.wiley.com/journal/19449194",
+      "wait": 5,
+      "scroll": true,
+      "ready": "div.issue-item",
+      "enabled": true
     },
     {
-      "key": "pepi",
-      "name": "Physics of the Earth and Planetary Interiors",
-      "issn": "0031-9201",
-      "publisher": "Elsevier",
-      "enabled": true,
-      "keywords": []
+      "key": "gcubed",
+      "name": "G-Cubed",
+      "parser": "agu",
+      "url": "https://agupubs.onlinelibrary.wiley.com/journal/15252027",
+      "wait": 5,
+      "scroll": true,
+      "ready": "div.issue-item",
+      "enabled": true
     },
     {
-      "key": "precambrian-research",
-      "name": "Precambrian Research",
-      "issn": "0301-9268",
-      "publisher": "Elsevier",
-      "enabled": true,
-      "keywords": []
+      "key": "geology_current",
+      "name": "Geology (Current)",
+      "parser": "geology_current",
+      "url": "https://pubs.geoscienceworld.org/geology/issue/current",
+      "wait": 6,
+      "scroll": true,
+      "ready": "h3.item-title",
+      "enabled": true
     },
     {
-      "key": "solid-earth-sciences",
-      "name": "Solid Earth Sciences",
-      "issn": "2451-912X",
-      "publisher": "Elsevier",
-      "enabled": true,
-      "keywords": []
+      "key": "geology_early",
+      "name": "Geology (Early Publication)",
+      "parser": "geology_early",
+      "url": "https://pubs.geoscienceworld.org/geology/early-publication",
+      "wait": 6,
+      "scroll": true,
+      "ready": "h5.al-title",
+      "enabled": true
     },
     {
-      "key": "jgr-planets",
-      "name": "Journal of Geophysical Research: Planets",
-      "issn": "2169-9097",
-      "publisher": "AGU",
-      "enabled": true,
-      "keywords": []
+      "key": "gji",
+      "name": "GJI",
+      "parser": "gji",
+      "url": "https://academic.oup.com/gji",
+      "wait": 8,
+      "scroll": false,
+      "ready": "div.widget-dynamic-entry",
+      "enabled": true
     },
     {
-      "key": "jgr-solid-earth",
-      "name": "Journal of Geophysical Research: Solid Earth",
-      "issn": "2169-9313",
-      "publisher": "AGU",
-      "enabled": true,
-      "keywords": []
+      "key": "science_current",
+      "name": "Science (Current)",
+      "parser": "science_current",
+      "url": "https://www.science.org/toc/science/current",
+      "wait": 6,
+      "scroll": true,
+      "ready": "h3[class*=\"article-title\"]",
+      "enabled": true
     },
     {
-      "key": "g-cubed",
-      "name": "Geochemistry, Geophysics, Geosystems",
-      "issn": "1525-2027",
-      "publisher": "AGU",
-      "enabled": true,
-      "keywords": []
-    },
-    {
-      "key": "reviews-of-geophysics",
-      "name": "Reviews of Geophysics",
-      "issn": "8755-1209",
-      "publisher": "AGU",
-      "enabled": true,
-      "keywords": []
-    },
-    {
-      "key": "psj",
-      "name": "The Planetary Science Journal",
-      "issn": "2632-3338",
-      "publisher": "AAS",
-      "enabled": true,
-      "keywords": []
-    },
-    {
-      "key": "maps",
-      "name": "Meteoritics & Planetary Science",
-      "issn": "1086-9379",
-      "publisher": "Wiley",
-      "enabled": true,
-      "keywords": []
-    },
-    {
-      "key": "geology",
-      "name": "Geology",
-      "issn": "0091-7613",
-      "publisher": "GSA",
-      "enabled": true,
-      "keywords": []
-    },
-    {
-      "key": "cmp",
-      "name": "Contributions to Mineralogy and Petrology",
-      "issn": "0010-7999",
-      "publisher": "Springer",
-      "enabled": true,
-      "keywords": []
-    },
-    {
-      "key": "american-mineralogist",
-      "name": "American Mineralogist",
-      "issn": "0003-004X",
-      "publisher": "MSA",
-      "enabled": true,
-      "keywords": []
-    },
-    {
-      "key": "journal-of-petrology",
-      "name": "Journal of Petrology",
-      "issn": "0022-3530",
-      "publisher": "Oxford University Press",
-      "enabled": true,
-      "keywords": []
-    },
-    {
-      "key": "space-science-reviews",
-      "name": "Space Science Reviews",
-      "issn": "0038-6308",
-      "publisher": "Springer",
-      "enabled": true,
-      "keywords": []
-    },
-    {
-      "key": "annual-review-eps",
-      "name": "Annual Review of Earth and Planetary Sciences",
-      "issn": "0084-6597",
-      "publisher": "Annual Reviews",
-      "enabled": true,
-      "keywords": []
-    },
-    {
-      "key": "elements",
-      "name": "Elements",
-      "issn": "1811-5209",
-      "publisher": "MSA",
-      "enabled": true,
-      "keywords": []
+      "key": "pnas",
+      "name": "PNAS",
+      "parser": "pnas",
+      "url": "https://www.pnas.org/topic/earth-sci",
+      "wait": 8,
+      "scroll": true,
+      "ready": "div.card",
+      "enabled": true
     }
   ]
 }

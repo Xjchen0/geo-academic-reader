@@ -51,7 +51,7 @@ MENU = r"""
   [9] 查看快速上手与提示词
   [10] 环境自检 (doctor)
   [11] 检查更新 / 更新到最新版本
-  [12] 扫描期刊新文献（只列候选，不自动精读）
+  [12] 抓取期刊网站新文献（只列候选，不自动精读）
   [13] 创建个人期刊清单 .geo-reader/journals.json
   [0] 退出
 """
@@ -128,13 +128,16 @@ def _run_batch(args) -> int:
 
 
 def _run_journal_scan(args, days=None, limit=None, sort=None) -> int:
-    """List new articles from the configured journals; never extract them."""
+    """Open the configured journal pages; list candidates, never extract."""
+    quiet = getattr(args, "json", False) or getattr(args, "quiet", False)
     try:
         payload = scan_journals(
             days=days if days is not None else getattr(args, "days", None),
             limit=limit if limit is not None else getattr(args, "limit", None),
             sort=sort if sort is not None else getattr(args, "sort", None),
             journal_keys=getattr(args, "journal", None),
+            logger=None if quiet else (lambda line: print(line, flush=True)),
+            translate=not getattr(args, "no_translate", False),
         )
         paths = write_scan(payload)
     except (JournalConfigError, ScanError) as exc:
@@ -156,8 +159,8 @@ def _run_journal_scan(args, days=None, limit=None, sort=None) -> int:
     print("  {}".format(paths["markdown"]))
     print("  {}".format(paths["json"]))
     if payload["total"] == 0:
-        print("\n提示：窗口内没有候选。可加大 --days，或在 {} 中调整期刊清单。"
-              .format(payload["config"]))
+        print("\n提示：没有解析到候选。检查上面的扫描告警；"
+              "如果 Chrome 停在人机验证页，完成验证后重跑同一条命令。")
     return 0
 
 
@@ -292,7 +295,7 @@ def interactive_menu() -> int:
             return _run_update(_default_args())
         return 0
     if choice == "12":
-        raw = input("时间窗口（天，留空用 journals.json 默认）: ").strip()
+        raw = input("日期过滤（天，留空=按页面当前列表）: ").strip()
         days = int(raw) if raw.isdigit() and int(raw) > 0 else None
         return _run_journal_scan(_default_args(), days=days)
     if choice == "13":
@@ -307,7 +310,7 @@ def interactive_menu() -> int:
 class _Args:
     def __init__(self, browser=None, wait=4.0, max_figures=30, json=False, quiet=False,
                  prerelease=False, refresh=False, force=False, dry_run=False,
-                 days=None, limit=None, sort=None, journal=None):
+                 days=None, limit=None, sort=None, journal=None, no_translate=False):
         self.browser = browser
         self.wait = wait
         self.max_figures = max_figures
@@ -321,6 +324,7 @@ class _Args:
         self.limit = limit
         self.sort = sort
         self.journal = journal
+        self.no_translate = no_translate
 
 
 def _default_args() -> _Args:
@@ -350,13 +354,14 @@ def build_parser() -> argparse.ArgumentParser:
     group.add_argument("--guide", action="store_true", help="Print the quick-start guide")
     group.add_argument("--check-update", action="store_true", help="Check GitHub for a newer release (cached for 6 h)")
     group.add_argument("--update", action="store_true", help="Update the workspace, preserving profile, notes and evidence packs")
-    group.add_argument("--new-literature", action="store_true", help="Scan the configured journal list and print numbered candidates; never extracts")
+    group.add_argument("--new-literature", action="store_true", help="Open the configured journal pages and print numbered candidates; never extracts")
 
     parser.add_argument("--journals-init", action="store_true", help="Create .geo-reader/journals.json for editing")
-    parser.add_argument("--days", type=int, help="Journal scan window in days (default: journals.json)")
-    parser.add_argument("--limit", type=int, help="Maximum candidates to list (default: journals.json)")
+    parser.add_argument("--days", type=int, help="Optional date filter for dated entries; 0 = page as-is (default: journals.json)")
+    parser.add_argument("--limit", type=int, help="Maximum candidates to list; 0 = all (default: journals.json)")
     parser.add_argument("--journal", action="append", metavar="KEY", help="Only scan this journal key (repeatable)")
     parser.add_argument("--sort", choices=["journal", "date"], help="Group candidates by journal or list them by date")
+    parser.add_argument("--no-translate", action="store_true", help="Skip Chinese titles in the new-literature scan")
 
     parser.add_argument("--browser", choices=["auto", "existing", "off"], help="Browser policy (default: profile)")
     parser.add_argument("--no-browser", dest="browser", action="store_const", const="off", help="Alias for --browser off")
@@ -367,7 +372,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--refresh", action="store_true", help="With --check-update: ignore the cached result")
     parser.add_argument("--prerelease", action="store_true", help="Include GitHub prereleases when checking for updates")
     parser.add_argument("--dry-run", action="store_true", help="With --update: show the target version without changing files")
-    parser.add_argument("--force", action="store_true", help="With --update: reinstall even when already up to date")
+    parser.add_argument("--force", action="store_true", help="With --update: reinstall even when up to date; with --journals-init: overwrite the user copy")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON")
     parser.add_argument("--quiet", action="store_true", help="Reduce progress output")
     return parser
