@@ -1,14 +1,28 @@
 # Troubleshooting & Recovery
 
-Start with the doctor:
+Start with the session preflight, then the verbose doctor:
 
 ```bash
+python3 main.py --preflight
 python3 main.py --doctor
 # or
 python3 doctor.py --json
 ```
 
-It reports Python, dependencies, Chrome, CDP 9222, the saved profile, VS Code settings, and workspace directories. If the profile is missing, that is normal on a fresh clone: say `开始使用` in the agent chat instead of looking for a setup command.
+Preflight checks the contract documents, Python and packages, Chrome/CDP, the profile, the workspace role (`code repository` / `test workspace`) and writes a 24-hour marker. The doctor reports the same environment in more detail. If the profile is missing, that is normal on a fresh clone: say `开始使用` in the agent chat instead of looking for a setup command.
+
+---
+
+## Session preflight and workspace roles
+
+| Symptom | Likely cause | What to do |
+|:---|:---|:---|
+| A literature command exits 2 | No marker, marker older than 24 h, or marker from another version | Run `python3 main.py --preflight`; do not bypass unless the user explicitly asks |
+| Marker reason is `profile_missing` | Preflight ran before the profile was written | Finish onboarding, write the profile, rerun preflight |
+| Preflight says `缺少契约文档` | `AGENTS.md`, `MEMORY.md` or `LESSONS.md` missing | Restore from the release; never create an empty placeholder |
+| Preflight says `缺少依赖` | Required package missing | Run the printed `pip install` line after asking the user |
+| `Role:` says `test workspace` but you are publishing code | Local profile/notes/packs exist in this checkout | Do not commit from here; publish from a clean code repository |
+| `Role:` says `code repository` but notes disappear from `git status` | Expected: `papers/*.md` and figures are git-ignored | Keep them locally; they are the user's knowledge base, not code |
 
 ---
 

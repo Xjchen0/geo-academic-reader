@@ -67,6 +67,16 @@ Observations from running this workspace on real papers. The theme is the same t
 - Keep the label on its own quoted line and leave a quoted blank line before the body, otherwise the bold label and the paragraph collapse into one line.
 - `--check-note` now treats the marker as an error and `--fix` rewrites it to `> **要点**`. The label is a guess; reword it to the real function rather than shipping "要点" everywhere.
 
+## [tags: contract, preflight, agent-behavior] A Request Is Not a Gate
+
+- "Read `AGENTS.md` before doing anything" is advisory. An agent under context pressure will run `--doi` first and read later, then reconstruct the contract from the flags. Documentation alone cannot make a session start correctly.
+- The first fix was to separate the durable rules (`MEMORY.md`) from the failure stories (`LESSONS.md`) and add `--preflight`, which checks the three documents, the environment, the profile and the workspace role, then writes a 24-hour, version-bound marker.
+- Literature commands require that marker and exit 2 without it. The point is not to punish the agent; it is to make "skipped the check" a visible failure instead of a silent downgrade.
+- The marker cannot prove a document was read. Do not pretend otherwise: the honest claim is "the check ran", and the contract forbids fabricating the marker.
+- The escape hatch (`--no-preflight`, `GEO_READER_SKIP_PREFLIGHT=1`) matters. A gate with no override gets disabled entirely the first time it misfires, usually offline. Require explicit user consent and say what was skipped.
+- Onboarding also needed a spoken component: confirm the OS, Python, packages, browser and editor; then walk the tree. Printing seven commands is not teaching.
+- The last structural fix was separating a *code repository* (no profile, notes or packs) from a *test workspace* (all of them). `--preflight` prints the role, and the data paths are git-ignored, so publishing cannot silently include a user's library.
+
 ## [tags: references, citation-network, classic-papers] A Classic Paper Is a Position, Not a PDF
 
 - The first version of the note template only asked for "文献定位" in three bullets. The result was a competent summary that never said who the paper was arguing with. That is a book report, not a classic-paper read.

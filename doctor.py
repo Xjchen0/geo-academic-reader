@@ -276,10 +276,11 @@ def print_report(report):
 
     _print_header("Next Steps")
     print("  1. Open this folder in your agent and say: 开始使用")
-    print("  2. python3 main.py --doi \"10.1038/s41467-026-69772-8\"")
-    print("  3. Agent writes papers/<slug>.md from .raw/<slug>/")
-    print("  4. python3 main.py --check-note papers/<slug>.md --fix")
-    print("  5. python3 main.py --index papers/<slug>.md")
+    print("  2. python3 main.py --preflight   # contract, environment, profile, role")
+    print("  3. python3 main.py --doi \"10.1038/s41467-026-69772-8\"")
+    print("  4. Agent writes papers/<slug>.md from .raw/<slug>/")
+    print("  5. python3 main.py --check-note papers/<slug>.md --fix")
+    print("  6. python3 main.py --index papers/<slug>.md")
     if report["packages"]["missing"] and not report["python"]["ok"]:
         print("\n{}Diagnostic completed with blocking issues.{}".format(RED, RESET))
     else:

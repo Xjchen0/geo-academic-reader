@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""One-click installer for geo-academic-reader v0.4.0."""
+"""One-click installer for geo-academic-reader v0.4.0-pre."""
 
 import argparse
 import os

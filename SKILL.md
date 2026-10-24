@@ -1,6 +1,6 @@
 ---
 name: geo-academic-reader
-version: "0.4.0"
+version: "0.4.0-pre"
 license: MIT
 description: >-
   Browser-first evidence extraction and VS Code-ready literature notes for scientific
@@ -13,9 +13,24 @@ compatibility: >-
   Optional: pymupdf for better PDF figure cropping.
 ---
 
-# geo-academic-reader (v0.4.0)
+# geo-academic-reader (v0.4.0-pre)
 
 A workspace-level workflow, not a one-shot summarizer. The scripts extract evidence; the agent interprets it; a QA command verifies the note before delivery.
+
+---
+
+## 🔐 Session Contract (P0)
+
+Every session, before any literature command:
+
+1. Read `AGENTS.md` → `MEMORY.md` → `LESSONS.md`.
+2. Run `python3 main.py --preflight`; confirm OS, Python, packages, Chrome/CDP, editor and workspace role with the user.
+3. Literature commands (`--doi`, `--url`, `--pdf`, `--batch-pdfs`, `--new-literature`, `--check-note`, `--index`) require a marker < 24 h old, from this version, `ok`, written after the profile existed. Otherwise the CLI exits 2.
+4. `--no-preflight` / `GEO_READER_SKIP_PREFLIGHT=1` are emergency escapes; use them only when the user explicitly asks and say what was skipped.
+
+The marker is not proof that you read the documents. Never fabricate it.
+
+**Two roles, one tree.** A *code repository* has no profile, notes or packs, and ships an empty `papers/`. A *test workspace* has local `.geo-reader/profile.json`, `papers/*.md`, `papers/assets/`, `.raw/` and `input_pdfs/`; those are git-ignored and never published. `--preflight` prints the detected role.
 
 ---
 
@@ -27,7 +42,7 @@ Open the workspace in an agent (VS Code, Cursor, Claude Code, Antigravity, Winds
 开始使用
 ```
 
-The agent follows `AGENTS.md` §0: it asks about language, editor, instruction style, browser policy, note depth, citation format, and the journal list for “find new papers”, then writes `.geo-reader/profile.json` and shows the working loop. **There is no setup command and no wizard.** No `.geo-reader/` directory is created until that conversation happens, so a fresh clone carries no usage trace. Preferences persist across sessions; say `重新设置偏好` to change them.
+The agent follows `AGENTS.md` §0: it reads the contract documents, runs `--preflight`, confirms the environment with you, asks about language, editor, instruction style, browser policy, note depth, citation format, and the journal list for “find new papers”, writes `.geo-reader/profile.json`, reruns `--preflight`, and gives a short tour of the tree. **There is no setup command and no wizard.** No `.geo-reader/` directory is created until that conversation happens, so a fresh clone carries no usage trace. Preferences persist across sessions; say `重新设置偏好` to change them.
 
 Load the skill only after the profile exists. If the profile is missing, onboarding comes first, even when the first message already contains a DOI.
 
@@ -38,7 +53,8 @@ Load the skill only after the profile exists. If the profile is missing, onboard
 ```bash
 # 1. Install dependencies (once)
 ./install.sh                 # Windows: .\install.ps1
-python3 doctor.py            # verify Python, packages, Chrome, CDP 9222
+python3 main.py --preflight  # contract docs, environment, profile, workspace role
+python3 doctor.py            # optional verbose diagnostics
 
 # 2. Extract an evidence pack
 python3 main.py --doi "10.1038/s41467-026-69772-8"
@@ -212,6 +228,9 @@ Guarantees: `.geo-reader/profile.json` is backed up and restored if needed; `pap
 
 | Symptom | Meaning | Action |
 |:---|:---|:---|
+| Literature command exits 2 | No fresh preflight marker, or the marker predates the profile | Run `python3 main.py --preflight`; do not bypass unless the user explicitly asks |
+| `preflight` says a contract doc is missing | `AGENTS.md`, `MEMORY.md` or `LESSONS.md` is absent | Restore it from the release; do not create an empty placeholder |
+| `preflight` reports missing packages | Required dependency absent | Give the `pip install` line and ask before installing |
 | No profile yet | First run | Say `开始使用` in the agent chat; do not run a setup script |
 | No Chrome found | Browser-first figures unavailable | Install Chrome, or accept `--browser off` and PDF fallback |
 | CDP 9222 not running | Chrome not in debug mode | Use `--browser auto`, or `python3 doctor.py --launch-chrome` |

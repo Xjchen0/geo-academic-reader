@@ -33,6 +33,16 @@ class VersionTests(unittest.TestCase):
         self.assertLess(updater.parse_version("0.3.0"), updater.parse_version("0.3.1"))
         self.assertLess(updater.parse_version("0.3.1"), updater.parse_version("0.10.0"))
 
+    def test_post_release_preview_does_not_offer_its_final_as_update(self):
+        self.assertFalse(updater.is_newer("0.4.0", "0.4.0-pre"))
+        self.assertTrue(updater.is_newer("0.4.1", "0.4.0-pre"))
+        self.assertTrue(updater.is_newer("0.4.0-pre.2", "0.4.0-pre"))
+
+    def test_preview_is_offered_only_on_the_prerelease_channel(self):
+        self.assertFalse(updater.has_update("0.4.0-pre", "0.4.0"))
+        self.assertTrue(updater.has_update("0.4.0-pre", "0.4.0", include_prerelease=True))
+        self.assertFalse(updater.has_update("0.4.0", "0.4.0-pre"))
+
     def test_v_prefix_and_patch_bump(self):
         self.assertEqual(updater.compare_versions("v0.3.1", "0.3.1"), 0)
         self.assertEqual(updater.bump_patch("0.3.0"), "0.3.1")
@@ -57,6 +67,17 @@ class ReleaseSelectionTests(unittest.TestCase):
     def test_drafts_are_ignored(self):
         releases = [_release("v0.9.0", draft=True), _release("v0.3.1")]
         self.assertEqual(updater.select_release(releases)["tag_name"], "v0.3.1")
+
+    def test_prerelease_channel_prefers_the_newest_publication(self):
+        final = _release("v0.4.0")
+        final["published_at"] = "2026-10-20T00:00:00Z"
+        preview = _release("v0.4.0-pre", prerelease=True)
+        preview["published_at"] = "2026-10-25T00:00:00Z"
+        self.assertEqual(
+            updater.select_release([final, preview], include_prerelease=True)["tag_name"],
+            "v0.4.0-pre",
+        )
+        self.assertEqual(updater.select_release([final, preview])["tag_name"], "v0.4.0")
 
 
 class CacheTests(unittest.TestCase):

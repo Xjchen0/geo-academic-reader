@@ -2,14 +2,22 @@
 
 这个文件不是“咒语大全”，而是一组**带约束的任务描述**。核心原则只有一条：先要证据，再要解读；没有证据的地方，明确写“原文未提供”。
 
-> **首次使用不需要运行设置脚本。** 在这个工作区里直接对 Agent 说 `开始使用`。Agent 会先用几个问题了解语言、环境、指令风格、浏览器策略、精读深度和引用格式，然后自己写入 `.geo-reader/profile.json`。以后每次任务都会沿用这份偏好；想修改时说 `重新设置偏好`。
+> **首次使用不需要运行设置脚本。** 在这个工作区里直接对 Agent 说 `开始使用`。Agent 会先读 `AGENTS.md`、`MEMORY.md`、`LESSONS.md`，运行 `python3 main.py --preflight`，和你确认操作系统、Python、依赖包、Chrome 和编辑器，再用几个问题了解语言、指令风格、浏览器策略、精读深度和引用格式。它会把答案写入 `.geo-reader/profile.json`，重跑 preflight，并带你走一遍目录结构。以后每次任务都会沿用这份偏好；想修改时说 `重新设置偏好`。
 
 ---
 
 ## 0. 首次使用：一句话触发对话式引导
 
 ```text
-开始使用。请先按 AGENTS.md 第 0 节和我确认偏好，再告诉我下一步可以做什么。
+开始使用。
+
+要求：
+1. 先读 AGENTS.md、MEMORY.md、LESSONS.md，不要只看 --help。
+2. 运行 python3 main.py --preflight，把操作系统、Python、依赖包、Chrome/CDP、编辑器和
+   工作区角色（代码仓库还是测试工作区）告诉我；缺少的依赖给出确切安装命令，先问我再装。
+3. 按 AGENTS.md 第 0 节问我的偏好，保存到 .geo-reader/profile.json，然后重跑 --preflight。
+4. 用几行说明 papers/、.raw/、.geo-reader/、templates/、journals.json 各自做什么，
+   再给我一个可选的第一次练习（找新文献 / 精读一篇 / 先看看目录）。
 不要让我运行 --setup 之类的设置命令。
 ```
 
@@ -17,7 +25,8 @@
 
 ```text
 精读 DOI 10.1038/s41467-026-69772-8。
-如果 .geo-reader/profile.json 不存在，先用对话问我偏好并保存，再开始抽论文。
+如果 .geo-reader/profile.json 不存在，先用对话问我偏好并保存、重跑 --preflight，再开始抽论文。
+如果 preflight 标记过期，先运行 python3 main.py --preflight，不要用 --no-preflight 绕过。
 ```
 
 修改偏好：
@@ -71,7 +80,9 @@ python3 main.py --new-literature --no-translate
 精读 DOI 10.1038/s41467-026-69772-8。
 
 要求：
-1. 先运行 python3 main.py --doi "10.1038/s41467-026-69772-8" 生成证据包；优先浏览器高清图，不要先抽 PDF 图。
+0. 先读 AGENTS.md、MEMORY.md、LESSONS.md，并运行 python3 main.py --preflight；
+   标记缺失或过期就重跑，不要用 --no-preflight 绕过。
+1. 再运行 python3 main.py --doi "10.1038/s41467-026-69772-8" 生成证据包；优先浏览器高清图，不要先抽 PDF 图。
 2. 读取 .raw/<slug>/paper.json、fulltext.md、figures/manifest.json。
 3. 按 templates/paper_note.md 写 papers/<slug>.md。
 4. 图片只用 assets/<slug>/fig_XX.png，图注必须来自 manifest。

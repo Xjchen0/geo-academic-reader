@@ -29,6 +29,13 @@ from .journal_watch import (
 )
 from .note_check import check_notes, index_note, list_workspace
 from .onboarding import print_guide, print_profile, profile_summary
+from .preflight import (
+    GATE_SKIP_ENV,
+    build_preflight,
+    format_report,
+    gate_status,
+    write_marker,
+)
 from .updater import check_for_update, format_check, format_update, update_workspace
 from .version import __version__
 
@@ -53,6 +60,7 @@ MENU = r"""
   [11] 检查更新 / 更新到最新版本
   [12] 抓取期刊网站新文献（只列候选，不自动精读）
   [13] 创建个人期刊清单 .geo-reader/journals.json
+  [14] 会话前置检查（契约 / 环境 / 偏好，文献命令的前置条件）
   [0] 退出
 """
 
@@ -63,6 +71,68 @@ def _profile_summary(profile: dict) -> str:
 
 def _run_doctor() -> int:
     return subprocess.call([sys.executable, str(PROJECT_ROOT / "doctor.py")])
+
+
+def _run_preflight(args) -> int:
+    """Record that the contract, environment and profile were checked."""
+    report = build_preflight()
+    marker = write_marker(report)
+    if args.json:
+        payload = dict(report)
+        payload["marker"] = str(marker)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(format_report(report))
+        print("Marker    : {}".format(marker))
+    return 0 if report.get("ok") else 1
+
+
+def _is_literature_action(args) -> bool:
+    return bool(
+        args.doi
+        or args.url
+        or args.pdf
+        or args.batch_pdfs
+        or args.new_literature
+        or args.check_note is not None
+        or args.index
+    )
+
+
+def _preflight_bypassed(args) -> bool:
+    return bool(getattr(args, "no_preflight", False) or os.environ.get(GATE_SKIP_ENV))
+
+
+def _gate_message(reason: str) -> str:
+    return (
+        "\n❌ 会话前置检查未通过：{}\n"
+        "   Agent 必须先读 AGENTS.md、MEMORY.md、LESSONS.md，再运行：\n"
+        "     python3 main.py --preflight\n"
+        "   仅当用户明确要求跳过时才用 --no-preflight（或 GEO_READER_SKIP_PREFLIGHT=1）。\n"
+    ).format(reason)
+
+
+def _guard_literature(args) -> Optional[int]:
+    """Return 2 when a literature command is attempted without a fresh preflight."""
+    if not _is_literature_action(args) or _preflight_bypassed(args):
+        return None
+    status = gate_status()
+    if status.get("allowed"):
+        return None
+    print(_gate_message(str(status.get("message", ""))))
+    return 2
+
+
+def _menu_gate() -> bool:
+    if os.environ.get(GATE_SKIP_ENV):
+        return True
+    status = gate_status()
+    if status.get("allowed"):
+        return True
+    print(_gate_message(str(status.get("message", ""))))
+    print("   在菜单里先选 [14] 会话前置检查。\n")
+    return False
+
 
 
 def _print_extraction_summary(result: dict) -> None:
@@ -245,26 +315,40 @@ def interactive_menu() -> int:
     print(BANNER)
     if not profile_exists():
         print("尚未建立偏好：本次使用默认值。通过 Agent 使用时，请先说「开始使用」。")
+    status = gate_status()
+    print("Preflight : {}".format(
+        "READY" if status.get("allowed") else "BLOCKED — 文献命令前先运行 [14]"
+    ))
     print("当前偏好：{}".format(_profile_summary(profile)))
     print(MENU)
     try:
-        choice = input("请选择 [0-13]: ").strip()
+        choice = input("请选择 [0-14]: ").strip()
     except (KeyboardInterrupt, EOFError):
         print("\n已退出。")
         return 0
 
     if choice == "1":
+        if not _menu_gate():
+            return 2
         return _run_extraction("doi", input("DOI: ").strip(), _default_args())
     if choice == "2":
+        if not _menu_gate():
+            return 2
         return _run_extraction("url", input("URL: ").strip(), _default_args())
     if choice == "3":
+        if not _menu_gate():
+            return 2
         return _run_extraction("pdf", input("PDF 路径: ").strip(), _default_args())
     if choice == "4":
+        if not _menu_gate():
+            return 2
         return _run_batch(_default_args())
     if choice == "5":
         print_profile(profile)
         return 0
     if choice == "6":
+        if not _menu_gate():
+            return 2
         target = input("笔记路径（留空检查 papers/ 下全部）: ").strip()
         try:
             auto_fix = input("自动修复可判定的图片路径？[Y/n]: ").strip().lower() not in ("n", "no")
@@ -273,6 +357,8 @@ def interactive_menu() -> int:
         check_notes([Path(target)] if target else None, fix=auto_fix)
         return 0
     if choice == "7":
+        if not _menu_gate():
+            return 2
         target = input("笔记路径: ").strip()
         if target:
             print(index_note(Path(target)))
@@ -295,11 +381,15 @@ def interactive_menu() -> int:
             return _run_update(_default_args())
         return 0
     if choice == "12":
+        if not _menu_gate():
+            return 2
         raw = input("日期过滤（天，留空=按页面当前列表）: ").strip()
         days = int(raw) if raw.isdigit() and int(raw) > 0 else None
         return _run_journal_scan(_default_args(), days=days)
     if choice == "13":
         return _run_journals_init(_default_args())
+    if choice == "14":
+        return _run_preflight(_default_args())
     if choice == "0":
         print("再见。")
         return 0
@@ -310,7 +400,8 @@ def interactive_menu() -> int:
 class _Args:
     def __init__(self, browser=None, wait=4.0, max_figures=30, json=False, quiet=False,
                  prerelease=False, refresh=False, force=False, dry_run=False,
-                 days=None, limit=None, sort=None, journal=None, no_translate=False):
+                 days=None, limit=None, sort=None, journal=None, no_translate=False,
+                 no_preflight=False):
         self.browser = browser
         self.wait = wait
         self.max_figures = max_figures
@@ -325,6 +416,7 @@ class _Args:
         self.sort = sort
         self.journal = journal
         self.no_translate = no_translate
+        self.no_preflight = no_preflight
 
 
 def _default_args() -> _Args:
@@ -347,6 +439,7 @@ def build_parser() -> argparse.ArgumentParser:
     group.add_argument("--pdf", help="Path to a local PDF")
     group.add_argument("--batch-pdfs", action="store_true", help="Process all PDFs in input_pdfs/")
     group.add_argument("--doctor", action="store_true", help="Run doctor.py")
+    group.add_argument("--preflight", action="store_true", help="Check contract docs, environment and profile; writes a 24 h marker required by literature commands")
     group.add_argument("--check-note", nargs="?", const="", metavar="NOTE", help="Check image paths and placeholders in a note (or all papers/*.md)")
     group.add_argument("--index", metavar="NOTE", help="Append/update a note row in papers/INDEX.md")
     group.add_argument("--list", action="store_true", help="List evidence packs and notes")
@@ -375,6 +468,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--force", action="store_true", help="With --update: reinstall even when up to date; with --journals-init: overwrite the user copy")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON")
     parser.add_argument("--quiet", action="store_true", help="Reduce progress output")
+    parser.add_argument(
+        "--no-preflight",
+        action="store_true",
+        help="Skip the session preflight gate for this command (only with explicit user consent)",
+    )
     return parser
 
 
@@ -385,6 +483,13 @@ def main(argv=None) -> int:
     if (args.doi or args.url or args.pdf or args.batch_pdfs) and not args.json:
         if not profile_exists():
             print("提示：尚未建立偏好，本次使用默认值。通过 Agent 使用时，请先说「开始使用」。\n")
+
+    if args.preflight:
+        return _run_preflight(args)
+
+    blocked = _guard_literature(args)
+    if blocked is not None:
+        return blocked
 
     if args.doctor:
         return _run_doctor()
@@ -466,7 +571,8 @@ def main(argv=None) -> int:
             print("首次使用：这个工作区还没有偏好记录。")
             print("请在对话里对 Agent 说「开始使用」，它会用几个问题了解你的偏好；")
             print("不需要运行任何设置脚本。说明见 AGENTS.md 第 0 节。")
-            print("\n也可以直接给出论文 DOI / URL / PDF 路径，Agent 会先完成引导再开始。")
+            print("\n也可以直接给出论文 DOI / URL / PDF 路径，Agent 会先完成引导，")
+            print("再运行 python3 main.py --preflight 解锁文献命令。")
             return 0
         if is_tty():
             return interactive_menu()

@@ -100,9 +100,12 @@ def print_guide(profile: Optional[dict] = None) -> None:
 
 0) 首次使用（对话式，不运行设置脚本）
    在这个工作区里对 Agent 说：开始使用
-   Agent 会先问语言、环境、指令风格、浏览器策略、精读深度、引用格式和期刊清单，
-   然后写入 .geo-reader/profile.json。以后每次任务都会沿用这份偏好。
-   想修改时说：重新设置偏好。
+   Agent 会先读 AGENTS.md / MEMORY.md / LESSONS.md，运行 --preflight，
+   和你确认操作系统、Python、依赖包、Chrome 与编辑器，然后再问语言、环境、
+   指令风格、浏览器策略、精读深度、引用格式和期刊清单。
+   偏好写入 .geo-reader/profile.json；写完后 Agent 会重跑 --preflight。
+   以后每次任务都会沿用这份偏好；想修改时说：重新设置偏好。
+   文献命令需要 24 小时内的 preflight 标记，过期后重跑 --preflight 即可。
 
 1) 找新文献（只列清单，等待你选择）
    python3 main.py --new-literature
@@ -140,8 +143,10 @@ def print_guide(profile: Optional[dict] = None) -> None:
    python3 main.py --index papers/<slug>.md
    python3 main.py --list
 
-5) 环境自检
-   python3 main.py --doctor
+5) 环境与会话检查
+   python3 main.py --preflight     # 契约文档 + 环境 + 偏好 + 工作区角色（写 24h 标记）
+   python3 main.py --doctor        # 更详细的环境诊断
+   缺少依赖时先按提示安装；不要用 --no-preflight 绕过检查。
 
 当前偏好{profile_note}：{summary}
 更多提示词：PROMPTS.md

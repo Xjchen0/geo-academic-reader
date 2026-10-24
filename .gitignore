@@ -21,6 +21,14 @@ ENV/
 output/
 test_output/
 
+# Local reading data: this repository ships the code, not the user's library.
+# A test/reading workspace keeps these files locally; they are never published.
+papers/*.md
+papers/assets/*
+!papers/assets/.gitkeep
+input_pdfs/*.pdf
+reading_list_*.md
+
 # OS specific files
 .DS_Store
 Thumbs.db

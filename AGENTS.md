@@ -1,4 +1,4 @@
-# AGENTS.md — geo-academic-reader v0.4.0
+# AGENTS.md — geo-academic-reader v0.4.0-pre
 
 > **Read this file before doing any literature task in this workspace.**
 > The workspace turns papers (DOI / URL / PDF) into a **raw evidence pack**, then the agent writes a **VS Code-ready literature note** from that evidence. The Python pipeline never writes review prose.
@@ -8,6 +8,23 @@
 ## 0. First run: conversational onboarding (mandatory)
 
 There is **no setup script and no wizard**. A first-time user must leave no trace until the agent has talked to them. The trigger instructions live here and in `PROMPTS.md`.
+
+### 0.0 Session contract: read, check, then work (P0)
+
+Every session, before any command that touches literature:
+
+1. Read `AGENTS.md` (this file), then `MEMORY.md` (durable decisions), then `LESSONS.md` (failure modes). Do not start from `--help` and infer the contract from flags.
+2. Run `python3 main.py --preflight`. It checks the three documents, Python and packages, Chrome/CDP, VS Code settings, the profile and the workspace role (`code repository` vs `test workspace`), then writes `.geo-reader/preflight.json`.
+3. Confirm the environment with the user in plain language (§0.2). `--preflight` never installs anything.
+4. Literature commands (`--doi`, `--url`, `--pdf`, `--batch-pdfs`, `--new-literature`, `--check-note`, `--index`) require a marker that is **less than 24 hours old, from this version, `ok`, and written after the profile existed**. Otherwise the CLI exits 2. The fix is to run `--preflight` again, not to bypass it.
+5. `--no-preflight` / `GEO_READER_SKIP_PREFLIGHT=1` exist for deliberate emergencies. Use them only when the user explicitly asks, and say in the reply what was skipped.
+
+The marker proves the check ran; it does not prove you read the documents. Never fabricate `preflight.json`, claim a read you did not do, or present a blocked command as a success.
+
+```bash
+python3 main.py --preflight          # human checklist
+python3 main.py --preflight --json   # same report, machine-readable
+```
 
 ### 0.1 Check for a profile
 
@@ -19,8 +36,21 @@ python3 main.py --profile --json
 
 - `"exists": true` → load the values and continue. **Never re-onboard** a returning user.
 - `"exists": false` → run the onboarding below **before** extracting any paper, even if the user's first message already contains a DOI, URL or PDF. Do not ask the user to run a command. Do not create `.geo-reader/` yet.
+- After writing a new profile, rerun `python3 main.py --preflight`. The marker must record `profile.exists: true`; otherwise literature commands stay blocked with reason `profile_missing`.
 
-### 0.2 Ask, in conversation
+### 0.2 Confirm the environment with the user
+
+`--preflight` is a conversation starter, not a silent gate. Report these in the user's language, then ask one compact confirmation:
+
+- **OS and Python**: if Python is below 3.9, stop and give the upgrade path instead of continuing.
+- **Packages**: `requests`, `beautifulsoup4`, `pypdf`, `websockets` are required; `pymupdf` is optional. Give the exact `pip install` line for anything missing and ask before running it.
+- **Browser**: Chrome/Chromium/Edge found or not, and whether CDP 9222 is already listening. If no browser is found, ask whether to install one or accept HTTP/PDF figures with lower-quality images.
+- **Editor**: the profile's editor and whether `.vscode/settings.json` exists.
+- **Workspace role**: `code repository` or `test workspace`. Say what it implies: a code repository ships code only; notes, figures, packs and PDFs stay local and out of git.
+
+Do not install a package, download a browser, or change editor settings without consent. If a blocker remains, state what will be degraded and do not start extraction while required packages are missing.
+
+### 0.3 Ask, in conversation
 
 Use the agent's question UI when available (Qoder `AskUserQuestion`, Claude Code choices, etc.). Otherwise ask in two compact numbered batches. Accept short answers such as `1A 2B 3A ...`.
 
@@ -42,7 +72,7 @@ Use the agent's question UI when available (Qoder `AskUserQuestion`, Claude Code
 
 If the user says “use defaults”, take `zh-CN`, `vscode`, `balanced`, `auto`, `deep`, `apa` and the shipped journal list. Say which defaults were used.
 
-### 0.3 Persist the answers
+### 0.4 Persist the answers
 
 Write `.geo-reader/profile.json` yourself (create the directory). Use this schema:
 
@@ -72,15 +102,34 @@ Write `.geo-reader/profile.json` yourself (create the directory). Use this schem
   Mention that copy-paste prompts are in `PROMPTS.md` and that `重新设置偏好` changes the profile.
 - `.geo-reader/` is git-ignored and stays local.
 - The journal list is **not** stored in the profile: `journals.json` is the shipped default, and `.geo-reader/journals.json` is the user copy (preferred, preserved by updates). Never infer a journal list from the conversation; create the user copy with `--journals-init` and let the user edit it.
+- After writing the profile, rerun `python3 main.py --preflight` so the marker records `profile.exists: true`.
 
-### 0.4 Reconfigure and persistence
+### 0.5 Teach the workspace: a short tour and one exercise
+
+Saving a profile is not onboarding by itself. Walk the user through the tree in 4–6 lines, in their language:
+
+- `papers/<slug>.md` — the note they will read and cite; `papers/assets/<slug>/` holds its figures.
+- `.raw/<slug>/` — the evidence pack (metadata, page-anchored text, figure manifest); local and git-ignored.
+- `.geo-reader/profile.json` — preferences; `.geo-reader/journal-scan/latest.md` — the last journal list.
+- `templates/paper_note.md` — the mandatory note structure; `MEMORY.md` / `LESSONS.md` — decisions and failure modes.
+- `journals.json` — the shipped journal pages behind “找新文献”; `.geo-reader/journals.json` — the user's editable copy.
+
+Then offer exactly one first exercise, matched to their profile:
+
+1. **找新文献** — scan the configured pages, list numbered candidates with Chinese machine translations, and wait for a choice.
+2. **精读 DOI ...** — extract one paper and write a note at the chosen depth.
+3. **用默认值试跑** — only when the user has already named a paper.
+
+Close with the three-step loop (`--doi` → write the note → `--check-note --fix` + `--index`), and say that `重新设置偏好` changes preferences while `--preflight` re-runs the environment check. For `guided` style, stop after the tour and wait for the choice. For `balanced` / `expert`, start the exercise only if the user already named a paper; otherwise ask which one.
+
+### 0.6 Reconfigure and persistence
 
 - Trigger phrases: `开始使用`, `首次使用`, `Start`, `Set up`, or any first literature request while the profile is missing.
 - `重新设置偏好` / `Reconfigure` → ask the questions again, update the existing profile, keep `created_at`.
 - Preferences persist across sessions and across repeated tests. Never delete or reset `.geo-reader/profile.json` just because the code was updated.
 - If the profile is corrupted, back it up to `.geo-reader/profile.json.bak`, ask the questions again, then rewrite it.
 
-### 0.5 Adapt to the profile
+### 0.7 Adapt to the profile
 
 | Profile field | Values | Agent behaviour |
 | :--- | :--- | :--- |
@@ -96,7 +145,7 @@ Write `.geo-reader/profile.json` yourself (create the directory). Use this schem
 
 `python3 main.py --guide` prints the same choices for the user.
 
-### 0.6 Updates: check after a task, upgrade only with consent
+### 0.8 Updates: check after a task, upgrade only with consent
 
 - After finishing a literature task, run `python3 main.py --check-update` once. It uses a 6-hour cache and exits 0 when GitHub is unreachable, so it never turns a successful task into a failure. The CLI also prints a one-line hint after extraction/QA when a newer release is known.
 - If a newer version exists, report it in one line (`current → latest`, release URL) and offer `python3 main.py --update`. Never upgrade without the user's consent.
@@ -217,6 +266,9 @@ Counting and verification rules:
 
 | Path | Role |
 | :--- | :--- |
+| `AGENTS.md` | Session contract, onboarding, standard operating procedure. |
+| `MEMORY.md` | Durable decisions that survive versions (roles, invariants, release rules). |
+| `LESSONS.md` | Failure modes and what they changed. |
 | `input_pdfs/` | Drop-zone for raw PDFs. |
 | `.raw/<slug>/paper.json` | Metadata + extraction provenance (no full text). |
 | `.raw/<slug>/fulltext.md` | Extracted text with page / section markers. |
@@ -229,13 +281,15 @@ Counting and verification rules:
 | `templates/literature_review.md` | Multi-paper review template. |
 | `journals.json` | Shipped journal page list (parser, URL or volume template, enabled flag, per-page waits). |
 | `.geo-reader/journals.json` | User copy, preferred over the shipped list; created by `--journals-init`. |
+| `.geo-reader/profile.json` | Conversational preferences; local and git-ignored. |
+| `.geo-reader/preflight.json` | Session marker: docs, environment, profile, workspace role; valid for 24 h. |
 | `.geo-reader/journal-scan/latest.md` | Latest numbered candidate list; the agent reads this, then waits. |
 | `.geo-reader/journal-scan/scan-<date>.json` | Machine-readable result of the same scan (per-page status and errors). |
 | `.geo-reader/journal-scan/translations.json` | Chinese-title cache (English title → machine translation); git-ignored. |
 | `PROMPTS.md` | Copy-paste prompts for users, including first-run triggers. |
 | `rules/` | Scraping, KaTeX, troubleshooting details. |
 
-`.raw/` and `.geo-reader/` are local and git-ignored. `papers/` (notes **and** their assets) is the durable, self-contained knowledge base.
+`.raw/`, `.geo-reader/` and local reading data (`papers/*.md`, `papers/assets/*`, `input_pdfs/*.pdf`) are git-ignored. `papers/` is the durable, self-contained knowledge base **on disk**; a code repository ships only the empty `papers/` tree (`.gitkeep`). `--preflight` prints which role the current folder has.
 
 ---
 
@@ -253,13 +307,14 @@ python3 main.py --new-literature
 
 The scan opens each configured page in Chrome/CDP, parses the page's own entries, adds a cached Chinese machine translation of each title, and writes `.geo-reader/journal-scan/latest.md`. Read that file, present the numbered candidates — English title with the Chinese line beneath it, journal, date, DOI — to the user, and **end the turn**. Do not call `--doi`, do not create `.raw/`, and do not write a note until the user replies with numbers or DOIs. Never invent a Chinese title when translation failed; say it is missing. Details and edge cases: §1.6.
 
-### Step 1 — Environment check
+### Step 1 — Session contract and environment check
 
 ```bash
-python3 doctor.py
+python3 main.py --preflight        # contract docs + environment + profile + role
+python3 doctor.py                  # optional verbose diagnostics
 ```
 
-If Chrome or a package is missing, tell the user the exact command. Do not silently downgrade to PDF figures.
+If `--preflight` reports blockers, give the exact fix and ask before installing anything. Do not silently downgrade to PDF figures. Literature commands are blocked (exit 2) until a fresh marker exists and the profile is present.
 
 ### Step 2 — Extract the evidence pack
 
@@ -392,7 +447,10 @@ For a review covering multiple papers, use `templates/literature_review.md`; eve
 
 ## 7. Completion checklist
 
-- [ ] Profile exists (or onboarding completed in this conversation and saved).
+- [ ] Read `AGENTS.md`, `MEMORY.md`, `LESSONS.md`; a fresh `--preflight` marker exists (≤24 h, same version, profile present).
+- [ ] Environment reported to the user (OS, Python, packages, browser, editor) and any blocker or degradation stated.
+- [ ] Workspace role stated: `code repository` ships no notes/packs; `test workspace` keeps them locally.
+- [ ] Profile exists (or onboarding completed in this conversation and saved, then `--preflight` rerun).
 - [ ] “找新文献”只打开了 `journals.json` / `.geo-reader/journals.json` 里的期刊页面，没有按对话主题自选文献。
 - [ ] 候选清单以编号呈现（英文原题 + 中文机译标题），并在用户选择前停止；未创建证据包或笔记。
 - [ ] `doctor.py` clean, or limitations stated.
@@ -414,6 +472,11 @@ For a review covering multiple papers, use `templates/literature_review.md`; eve
 
 | Symptom | Action |
 | :--- | :--- |
+| Literature command exits 2 (`preflight_missing`) | Run `python3 main.py --preflight`; do not use `--no-preflight` unless the user asked |
+| Marker says `profile_missing` | Finish conversational onboarding, write `.geo-reader/profile.json`, rerun `--preflight` |
+| `--preflight` reports missing docs | Restore `AGENTS.md` / `MEMORY.md` / `LESSONS.md` from the release; never write empty placeholders |
+| `--preflight` reports missing packages | Give the `pip install` line and ask before installing; do not start extraction |
+| A paper/note folder mixes code and data | Check the role line; notes, assets, packs and PDFs are git-ignored in a code repository |
 | “找新文献”没有先给清单 | 运行 `python3 main.py --new-literature`；不要改用主题搜索或从笔记推断 |
 | 扫描结果为 0 | 检查 `.geo-reader/journals.json` 的 `url` / `enabled`；EPSL 先更新 `volumes`；页面改版后可能需要更新对应 `parser` |
 | 期刊清单缺失 / JSON 错误 | `python3 main.py --journals-init`；确需覆盖个人副本时用 `--force`，或恢复 `journals.json` |

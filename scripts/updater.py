@@ -60,6 +60,7 @@ UPGRADE_PATHS = (
     "geo-academic-reader.yaml",
     "journals.json",
     "AGENTS.md",
+    "MEMORY.md",
     "SKILL.md",
     "PROMPTS.md",
     "LESSONS.md",
@@ -93,6 +94,12 @@ _PHASE_RANK = {
     "pre": 3,
     "preview": 3,
     "rc": 3,
+}
+
+# version -> final release it was published after. Semver sorts the preview
+# below that final, which would make --check-update suggest going backwards.
+POST_RELEASE_PREVIEWS = {
+    "0.4.0-pre": "0.4.0",
 }
 
 
@@ -135,10 +142,30 @@ def compare_versions(left: str, right: str) -> int:
 def is_newer(candidate: Optional[str], current: str) -> bool:
     if not candidate:
         return False
+    # A preview published *after* its final release (v0.4.0-pre after v0.4.0)
+    # sorts below the final under PEP 440. Do not offer the final as a
+    # "downgrade upgrade"; the next real release will compare normally.
+    if candidate.lstrip("vV") == POST_RELEASE_PREVIEWS.get(current.lstrip("vV")):
+        return False
     try:
         return compare_versions(candidate, current) > 0
     except ValueError:
         return False
+
+
+def has_update(latest: Optional[str], current: str, include_prerelease: bool = False) -> bool:
+    """True when ``latest`` should be offered as an update.
+
+    The prerelease channel may offer a post-release preview (``0.4.0-pre``)
+    to a user on ``0.4.0``; the stable channel never does.
+    """
+    if not latest:
+        return False
+    current_base = current.lstrip("vV")
+    latest_base = str(latest).lstrip("vV")
+    if include_prerelease and POST_RELEASE_PREVIEWS.get(latest_base) == current_base:
+        return True
+    return is_newer(latest_base, current_base)
 
 
 def bump_patch(version: str) -> str:
@@ -172,7 +199,12 @@ def fetch_releases(timeout: float = 8.0) -> List[dict]:
 
 
 def select_release(releases: List[dict], include_prerelease: bool = False) -> Optional[dict]:
-    """Pick the highest published release, optionally allowing prereleases."""
+    """Pick the highest published release, optionally allowing prereleases.
+
+    On the prerelease channel, publication time wins over semver: a preview
+    published after its final (v0.4.0-pre after v0.4.0) sorts below that final
+    but is still the newest build. Ties fall back to semver.
+    """
     best = None
     best_key = None
     for release in releases or []:
@@ -185,8 +217,9 @@ def select_release(releases: List[dict], include_prerelease: bool = False) -> Op
             key = parse_version(tag)
         except ValueError:
             continue
-        if best_key is None or key > best_key:
-            best_key = key
+        order = (str(release.get("published_at") or ""), key) if include_prerelease else key
+        if best_key is None or order > best_key:
+            best_key = order
             best = release
     return best
 
@@ -278,7 +311,9 @@ def check_for_update(
         payload = dict(cached)
         payload["source"] = "cache"
         payload["current"] = current
-        payload["has_update"] = is_newer(payload.get("latest_version"), current)
+        payload["has_update"] = has_update(
+            payload.get("latest_version"), current, include_prerelease
+        )
         return payload
 
     checked_at = _now().isoformat(timespec="seconds")
@@ -312,7 +347,9 @@ def check_for_update(
                 "published_at": summary["published_at"],
                 "prerelease": summary["prerelease"],
                 "notes": summary["body"],
-                "has_update": is_newer(summary["version"], current),
+                "has_update": has_update(
+                    summary["version"], current, include_prerelease
+                ),
                 "prerelease_only": False,
                 "error": None,
                 "checked_at": checked_at,
@@ -678,6 +715,11 @@ def format_check(payload: dict) -> str:
         if payload.get("prerelease"):
             lines.insert(1, "  （预发布版本，可用 --prerelease 指定通道）")
         return "\n".join(lines)
+    if POST_RELEASE_PREVIEWS.get(current.lstrip("vV")) == str(latest).lstrip("vV"):
+        return (
+            "当前是 {}（在 {} 之后发布的预览版），无需回退。\n"
+            "  下一个正式版本发布后会正常提示。"
+        ).format(current, latest)
     return "已是最新版本：{}（远端最新 {}）。".format(current, latest)
 
 
