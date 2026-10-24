@@ -480,16 +480,16 @@ def main(argv=None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if (args.doi or args.url or args.pdf or args.batch_pdfs) and not args.json:
-        if not profile_exists():
-            print("提示：尚未建立偏好，本次使用默认值。通过 Agent 使用时，请先说「开始使用」。\n")
-
     if args.preflight:
         return _run_preflight(args)
 
     blocked = _guard_literature(args)
     if blocked is not None:
         return blocked
+
+    if (args.doi or args.url or args.pdf or args.batch_pdfs) and not args.json:
+        if not profile_exists():
+            print("提示：本次使用了 --no-preflight 且尚未建立偏好，因此采用默认值。\n")
 
     if args.doctor:
         return _run_doctor()

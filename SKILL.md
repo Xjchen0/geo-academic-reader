@@ -1,6 +1,6 @@
 ---
 name: geo-academic-reader
-version: "0.4.0-pre"
+version: "0.4.0-pre.1"
 license: MIT
 description: >-
   Browser-first evidence extraction and VS Code-ready literature notes for scientific
@@ -13,7 +13,7 @@ compatibility: >-
   Optional: pymupdf for better PDF figure cropping.
 ---
 
-# geo-academic-reader (v0.4.0-pre)
+# geo-academic-reader (v0.4.0-pre.1)
 
 A workspace-level workflow, not a one-shot summarizer. The scripts extract evidence; the agent interprets it; a QA command verifies the note before delivery.
 

@@ -100,6 +100,7 @@ _PHASE_RANK = {
 # below that final, which would make --check-update suggest going backwards.
 POST_RELEASE_PREVIEWS = {
     "0.4.0-pre": "0.4.0",
+    "0.4.0-pre.1": "0.4.0",
 }
 
 

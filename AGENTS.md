@@ -1,4 +1,4 @@
-# AGENTS.md — geo-academic-reader v0.4.0-pre
+# AGENTS.md — geo-academic-reader v0.4.0-pre.1
 
 > **Read this file before doing any literature task in this workspace.**
 > The workspace turns papers (DOI / URL / PDF) into a **raw evidence pack**, then the agent writes a **VS Code-ready literature note** from that evidence. The Python pipeline never writes review prose.

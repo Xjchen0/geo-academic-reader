@@ -34,14 +34,16 @@ class VersionTests(unittest.TestCase):
         self.assertLess(updater.parse_version("0.3.1"), updater.parse_version("0.10.0"))
 
     def test_post_release_preview_does_not_offer_its_final_as_update(self):
-        self.assertFalse(updater.is_newer("0.4.0", "0.4.0-pre"))
-        self.assertTrue(updater.is_newer("0.4.1", "0.4.0-pre"))
+        for preview in ("0.4.0-pre", "0.4.0-pre.1"):
+            self.assertFalse(updater.is_newer("0.4.0", preview))
+            self.assertTrue(updater.is_newer("0.4.1", preview))
         self.assertTrue(updater.is_newer("0.4.0-pre.2", "0.4.0-pre"))
 
     def test_preview_is_offered_only_on_the_prerelease_channel(self):
-        self.assertFalse(updater.has_update("0.4.0-pre", "0.4.0"))
-        self.assertTrue(updater.has_update("0.4.0-pre", "0.4.0", include_prerelease=True))
-        self.assertFalse(updater.has_update("0.4.0", "0.4.0-pre"))
+        for preview in ("0.4.0-pre", "0.4.0-pre.1"):
+            self.assertFalse(updater.has_update(preview, "0.4.0"))
+            self.assertTrue(updater.has_update(preview, "0.4.0", include_prerelease=True))
+            self.assertFalse(updater.has_update("0.4.0", preview))
 
     def test_v_prefix_and_patch_bump(self):
         self.assertEqual(updater.compare_versions("v0.3.1", "0.3.1"), 0)

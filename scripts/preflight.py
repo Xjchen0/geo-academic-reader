@@ -277,10 +277,12 @@ def format_report(report: Dict[str, object]) -> str:
         lines.append("Blockers  : " + "; ".join(report["blockers"]))
     else:
         lines.append("Blockers  : none")
-    if report.get("ok"):
-        lines.append("Gate      : READY (marker valid for {} h)".format(MARKER_MAX_AGE_HOURS))
+    if not report.get("ok"):
+        lines.append("Gate      : BLOCKED (see blockers)")
+    elif not profile.get("exists"):
+        lines.append("Gate      : BLOCKED — onboarding required, then rerun --preflight")
     else:
-        lines.append("Gate      : BLOCKED")
+        lines.append("Gate      : READY (marker valid for {} h)".format(MARKER_MAX_AGE_HOURS))
     lines.append("")
     if profile.get("exists"):
         lines.append("Next: run a literature command, or --guide for the workflow.")
