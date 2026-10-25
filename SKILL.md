@@ -1,6 +1,6 @@
 ---
 name: geo-academic-reader
-version: "0.5.0"
+version: "0.5.1"
 license: MIT
 description: >-
   Browser-first evidence extraction and VS Code-ready literature notes for scientific
@@ -13,7 +13,7 @@ compatibility: >-
   Optional: pymupdf for better PDF figure cropping.
 ---
 
-# geo-academic-reader (v0.5.0)
+# geo-academic-reader (v0.5.1)
 
 A workspace-level workflow, not a one-shot summarizer. The scripts extract evidence; the agent interprets it; a QA command verifies the note before delivery.
 
@@ -53,8 +53,13 @@ Load the skill only after the profile exists. If the profile is missing, onboard
 ```bash
 # 1. Install dependencies (once)
 ./install.sh                 # Windows: .\install.ps1
+uv sync                      # if you use uv: creates .venv/ and installs the project
 python3 main.py --preflight  # contract docs, environment, profile, workspace role
 python3 doctor.py            # optional verbose diagnostics
+
+# Use `uv run python main.py ...` instead of `python3 main.py ...` when the
+# project owns a uv environment (every `python` on PATH exits with code 49 on
+# a fresh Windows install — that is the Microsoft Store alias stub).
 
 # 2. Extract an evidence pack
 python3 main.py --doi "10.1038/s41467-026-69772-8"

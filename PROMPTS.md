@@ -254,6 +254,9 @@ python3 main.py --new-literature --no-translate
 - 交付前必须运行 --check-note --fix，再运行 --index。
 - 任务结束后运行一次 --check-update（缓存 6 小时）；离线失败不算任务失败。发现新版本只提示，不擅自升级。
 - 如果正文少于 800 字符、图片为 0、或浏览器被人机验证拦截，先报告，不要硬写。
+- 解释器：默认 `python3 main.py …`；如果工作区由 uv 管理，改用 `uv run python main.py …`。
+  Windows 上 `python`/`python3` 若一律退出码 49，那是 Microsoft Store 占位符，先跑一次 `uv sync`，
+  不要把它当成项目缺陷；也不要在已有仓库里跑 `uv init`（pyproject.toml 已存在）。
 ```
 
 ---

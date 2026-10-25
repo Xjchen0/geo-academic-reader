@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""One-click installer for geo-academic-reader v0.5.0."""
+"""One-click installer for geo-academic-reader v0.5.1."""
 
 import argparse
 import os
@@ -10,6 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from scripts.console import FAIL, OK, configure_stdio
 from scripts.version import __version__
 
 
@@ -25,15 +26,22 @@ def print_banner():
 def run_command(command, description):
     print("[*] {}...".format(description))
     try:
-        result = subprocess.run(command, check=True, text=True, capture_output=True)
-        print("    [✓] Success.")
+        result = subprocess.run(
+            command, check=True, text=True, encoding="utf-8", errors="replace",
+            capture_output=True,
+        )
+        print("    [{}] Success.".format(OK))
         return True, result.stdout
     except subprocess.CalledProcessError as exc:
-        print("    [✗] Error: {}".format(exc.stderr or exc.stdout or str(exc)))
+        print("    [{}] Error: {}".format(FAIL, exc.stderr or exc.stdout or str(exc)))
         return False, exc.stderr
+    except FileNotFoundError as exc:
+        print("    [{}] Error: {}".format(FAIL, exc))
+        return False, str(exc)
 
 
 def main(argv=None):
+    configure_stdio()
     parser = argparse.ArgumentParser(description="Install geo-academic-reader")
     parser.add_argument("--with-pdf-figures", action="store_true",
                         help="Also install PyMuPDF for caption-aware PDF figure cropping")
@@ -59,9 +67,21 @@ def main(argv=None):
         print("    System / Global Python detected.")
 
     requirements = package_dir / "requirements.txt"
-    if requirements.exists():
-        command = (["uv", "pip", "install", "-r", str(requirements)]
-                   if has_uv else [sys.executable, "-m", "pip", "install", "-r", str(requirements)])
+    pyproject = package_dir / "pyproject.toml"
+    used_uv = False
+
+    if has_uv and pyproject.exists():
+        # uv owns the project environment: it creates .venv/, resolves the
+        # dependencies declared in pyproject.toml and installs the package
+        # itself, so `uv run python main.py ...` works out of the box.
+        print("    Using 'uv sync' to create .venv/ and install the project.")
+        ok, _ = run_command(["uv", "sync"], "Creating the uv environment and installing dependencies")
+        used_uv = ok
+        if not ok:
+            print("\n[!] uv sync failed, falling back to pip ...")
+
+    if not used_uv and requirements.exists():
+        command = [sys.executable, "-m", "pip", "install", "-r", str(requirements)]
         ok, _ = run_command(command, "Installing core dependencies")
         if not ok:
             print("\n[!] Retrying with --user ...")
@@ -69,33 +89,38 @@ def main(argv=None):
                         "Installing core dependencies (--user)")
 
     if args.with_pdf_figures:
-        command = (["uv", "pip", "install", "pymupdf>=1.23"]
-                   if has_uv else [sys.executable, "-m", "pip", "install", "pymupdf>=1.23"])
+        if used_uv:
+            command = ["uv", "pip", "install", "pymupdf>=1.23"]
+        else:
+            command = [sys.executable, "-m", "pip", "install", "pymupdf>=1.23"]
         run_command(command, "Installing optional PyMuPDF")
 
-    print("\n[*] Registering CLI tools (geo-reader, geo-doctor)...")
-    if has_uv:
-        editable_command = ["uv", "pip", "install", "-e", "."]
+    if used_uv:
+        print("\n[*] The project is installed in .venv/ (uv).")
+        print("    Run everything through: uv run python main.py ...")
     else:
+        print("\n[*] Registering CLI tools (geo-reader, geo-doctor)...")
         editable_command = [sys.executable, "-m", "pip", "install", "-e", "."]
-    ok, _ = run_command(editable_command, "Editable install")
-    if ok:
-        print("    [✓] CLI tools registered.")
-    else:
-        print("    [i] You can still run: python3 main.py ...")
+        ok, _ = run_command(editable_command, "Editable install")
+        if ok:
+            print("    [{}] CLI tools registered.".format(OK))
+        else:
+            print("    [i] You can still run: python3 main.py ...")
 
     if not args.skip_doctor:
         print("\n" + "=" * 65)
         print(" Running environment diagnostics...")
         print("=" * 65)
-        subprocess.run([sys.executable, str(package_dir / "doctor.py")])
+        doctor_python = ["uv", "run", "python"] if used_uv else [sys.executable]
+        subprocess.run(doctor_python + [str(package_dir / "doctor.py")])
 
+    runner = "uv run python main.py" if used_uv else "python3 main.py"
     print("\nInstallation complete. Next steps:")
     print("  1. Open this folder in your agent and say: 开始使用 (or Start)")
-    print("  2. python3 main.py --doi \"10.1038/s41467-026-69772-8\"")
+    print("  2. {} --doi \"10.1038/s41467-026-69772-8\"".format(runner))
     print("  3. Ask your agent to write papers/<slug>.md from .raw/<slug>/")
-    print("  4. python3 main.py --check-note papers/<slug>.md --fix")
-    print("  5. python3 main.py --index papers/<slug>.md\n")
+    print("  4. {} --check-note papers/<slug>.md --fix".format(runner))
+    print("  5. {} --index papers/<slug>.md\n".format(runner))
 
 
 if __name__ == "__main__":

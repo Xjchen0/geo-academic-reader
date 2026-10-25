@@ -20,6 +20,7 @@ from .config import (
     relative_posix,
     today_iso,
 )
+from .console import ARROW, NOTE, OK
 from .figures import image_magic
 
 MD_IMAGE_RE = re.compile(
@@ -765,7 +766,7 @@ def fix_note(note_path: Path, dry_run: bool = False) -> Dict[str, object]:
 
 def print_report(report: dict) -> None:
     note = report.get("note", "")
-    print("\n📝 {}".format(note))
+    print("\n{} {}".format(NOTE, note))
     print("   图片: {} | 错误: {} | 警告: {}".format(
         report.get("images", 0), report.get("errors", 0), report.get("warnings", 0)
     ))
@@ -780,7 +781,7 @@ def print_report(report: dict) -> None:
         ))
     issues = report.get("issues", [])
     if not issues:
-        print("   ✓ 未发现问题")
+        print("   {} 未发现问题".format(OK))
         return
     for issue in issues:
         location = "L{}".format(issue["line"]) if issue.get("line") else "—"
@@ -806,13 +807,13 @@ def check_notes(paths: Optional[Iterable[Path]] = None, fix: bool = False, stric
             report = result["report"]
             print_report(report)
             if result["fixed"]:
-                print("   → 已修复 {} 处路径".format(len(result["fixed"])))
+                print("   {} 已修复 {} 处路径".format(ARROW, len(result["fixed"])))
             if result.get("fixed_alerts"):
-                print("   → 已改写 {} 处 GitHub alert 标记，请核对标签措辞".format(
-                    result["fixed_alerts"]
+                print("   {} 已改写 {} 处 GitHub alert 标记，请核对标签措辞".format(
+                    ARROW, result["fixed_alerts"]
                 ))
             if result.get("migrated"):
-                print("   → 已迁移 {} 张图片到 papers/assets/".format(len(result["migrated"])))
+                print("   {} 已迁移 {} 张图片到 papers/assets/".format(ARROW, len(result["migrated"])))
         else:
             report = validate_note(target, strict=strict)
             print_report(report)

@@ -387,6 +387,8 @@ def _run_git(args: List[str], timeout: float = 120.0) -> subprocess.CompletedPro
         ["git"] + args,
         cwd=str(PROJECT_ROOT),
         text=True,
+        encoding="utf-8",
+        errors="replace",
         capture_output=True,
         timeout=timeout,
     )
@@ -450,12 +452,14 @@ def _clone_payload(tag: str, timeout: float, log) -> List[str]:
             url, str(destination),
         ]
         sparse = subprocess.run(
-            sparse_cmd, text=True, capture_output=True, timeout=timeout,
+            sparse_cmd, text=True, encoding="utf-8", errors="replace",
+            capture_output=True, timeout=timeout,
         )
         if sparse.returncode == 0:
             checkout = subprocess.run(
                 ["git", "-C", str(destination), "sparse-checkout", "set"] + list(SPARSE_DIRS),
-                text=True, capture_output=True, timeout=timeout,
+                text=True, encoding="utf-8", errors="replace",
+                capture_output=True, timeout=timeout,
             )
             if checkout.returncode != 0:
                 raise OSError("sparse checkout 失败: {}".format(
@@ -464,7 +468,8 @@ def _clone_payload(tag: str, timeout: float, log) -> List[str]:
         else:
             shutil.rmtree(str(destination), ignore_errors=True)
             full = subprocess.run(
-                base, text=True, capture_output=True, timeout=timeout
+                base, text=True, encoding="utf-8", errors="replace",
+                capture_output=True, timeout=timeout
             )
             if full.returncode != 0:
                 raise OSError("git clone 失败: {}".format(

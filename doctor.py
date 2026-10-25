@@ -25,6 +25,7 @@ from scripts.config import (
     load_profile,
     profile_exists,
 )
+from scripts.console import FAIL, INFO, OK, WARN, configure_stdio, store_alias_launchers
 from scripts.version import __version__
 
 REQUIRED_PACKAGES = [
@@ -53,19 +54,19 @@ def _print_header(title):
 
 
 def _ok(message):
-    print(" {}[✓ OK]{} {}".format(GREEN, RESET, message))
+    print(" {}{}{} {}".format(GREEN, OK, RESET, message))
 
 
 def _warn(message):
-    print(" {}[! WARN]{} {}".format(YELLOW, RESET, message))
+    print(" {}{}{} {}".format(YELLOW, WARN, RESET, message))
 
 
 def _fail(message):
-    print(" {}[✗ FAIL]{} {}".format(RED, RESET, message))
+    print(" {}{}{} {}".format(RED, FAIL, RESET, message))
 
 
 def _info(message):
-    print(" {}[i INFO]{} {}".format(CYAN, RESET, message))
+    print(" {}{}{} {}".format(CYAN, INFO, RESET, message))
 
 
 def detect_package_manager():
@@ -173,6 +174,7 @@ def build_report(args):
             "version": platform.python_version(),
             "executable": sys.executable,
             "ok": sys.version_info >= (3, 9),
+            "store_alias_launchers": store_alias_launchers(),
         },
         "package_manager": pm_info,
         "packages": {"installed": installed, "missing": missing},
@@ -216,6 +218,12 @@ def print_report(report):
         _ok("Python: {} ({})".format(python["version"], python["executable"]))
     else:
         _fail("Python {} is too old; require >= 3.9".format(python["version"]))
+
+    for alias in python.get("store_alias_launchers") or []:
+        _warn("PATH 上的 {} 是 Microsoft Store 占位符（退出码 49，无输出）: {}".format(
+            alias["name"], alias["path"]
+        ))
+        _info("改用 uv run python main.py ...，或从 python.org 安装并勾选 Add Python to PATH。")
 
     _info("Environment: {}".format(report["package_manager"]["summary"]))
 
@@ -288,6 +296,7 @@ def print_report(report):
 
 
 def main(argv=None):
+    configure_stdio()
     parser = argparse.ArgumentParser(description="geo-academic-reader environment doctor")
     parser.add_argument("--install", action="store_true", dest="install", help="Install missing packages")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON")

@@ -120,3 +120,12 @@ Observations from running this workspace on real papers. The theme is the same t
 - Translate the *clean* title. Escaped inline markup (`NH&lt;sub&gt;4&lt;/sub&gt;`, `<i>P</i>-Wave`) must be unescaped before tags are stripped, or the cache key differs from the displayed title and a handful of entries silently show “暂缺”.
 - Store raw machine output and post-edit on read. A glossary (`fugacity→逸度`, `sub-arc→弧下`, `large igneous province→大火成岩省`) can then improve every cached entry without retranslation, and a bad rule is a one-line fix rather than a cache purge.
 - Never hand-write a missing translation. “暂缺” plus a rerun instruction is honest; a plausible-looking invented title is not.
+
+## [tags: windows, encoding, qa, console] The Console Is Part of the Contract
+
+- First failure: on Windows 11 the QA gate died with `UnicodeEncodeError: 'gbk' codec can't encode character '\U0001f4dd'` at `print("\n\U0001f4dd {}".format(note))`. The note was fine; the report never printed. A check that crashes before it reports is indistinguishable from a check that found nothing.
+- A Chinese Windows console encodes a **pipe** with cp936/GBK, not UTF-8. Redirected output — which is exactly how an agent reads a command — therefore arrives as GBK bytes and decodes as mojibake (`֤�ݰ�…`). The files on disk were never affected: every write already used `encoding="utf-8"`.
+- Fix both halves. Force UTF-8 on stdout/stderr at the entry point (`sys.stdout.reconfigure(encoding="utf-8", errors="replace")`), and stop printing emoji: the console markers are ASCII (`[OK]`, `[FAIL]`, `[WARN]`). A static test now fails the build if a GBK-unsafe character reappears in any `.py` file.
+- Also pin `encoding="utf-8"` on every `subprocess.run(..., text=True)`. `text=True` decodes with the *locale* encoding, so a UTF-8 JSON payload from `doctor.py` would be misread by `preflight.py` on the same machine.
+- Exit code **49** with no output means the Microsoft Store alias stub (`AppData\Local\Microsoft\WindowsApps\python3.exe`), not a project bug. It is a zero-byte reparse point that never starts Python. Detect it by path, and say so; the fix is `uv sync` + `uv run`, or a python.org install with "Add Python to PATH".
+- `uv init` in an existing checkout fails by design ("Project is already initialized"). `uv sync` is the command that belongs there.

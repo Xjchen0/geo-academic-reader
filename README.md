@@ -1,6 +1,6 @@
 # geo-academic-reader
 
-[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
+[![Version](https://img.shields.io/badge/version-0.5.1-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-green.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
@@ -52,6 +52,21 @@ python install.py
 
 The installer checks Python, installs the required packages, reports the browser situation, and creates the empty `papers/` tree. **It never asks for a DOI, never writes a profile, and never creates reading data** — that happens in conversation, in step 2.
 
+**If you manage Python with `uv`** (recommended, especially on Windows):
+
+```bash
+git clone https://github.com/Xjchen0/geo-academic-reader.git
+cd geo-academic-reader
+uv sync                          # creates .venv/ and installs the project + dependencies
+uv run python main.py --preflight
+```
+
+`uv sync` reads `pyproject.toml`, resolves the dependencies and installs the project itself, so `uv run python main.py …` works without activating anything. `install.py` detects `uv` and runs `uv sync` for you when you do use it. `uv.lock` is git-ignored on purpose: the project supports Python 3.9–3.12 and pip installs, so the resolution stays per-machine — delete the file to re-resolve.
+
+> **Windows note**
+>
+> On a fresh Windows install, `python` and `python3` on `PATH` resolve to the Microsoft Store alias (`AppData\Local\Microsoft\WindowsApps\python3.exe`), a zero-byte stub that exits with code **49** and prints nothing. Use `uv sync` + `uv run`, or install Python from python.org and tick **Add Python to PATH**. `--preflight` and `doctor.py` now name the stub explicitly instead of leaving a bare exit 49.
+
 Optional: put the CLI on your `PATH`.
 
 ```bash
@@ -64,6 +79,10 @@ geo-doctor                  # verbose diagnostics
 
 ```bash
 python3 main.py --preflight
+```
+
+```bash
+uv run python main.py --preflight      # if you use uv
 ```
 
 It prints one checklist and writes `.geo-reader/preflight.json`:
@@ -410,6 +429,9 @@ tests/test_updater.py
 | `--update` refuses | Dirty code tree or diverged history | Commit or `git stash`; never `reset --hard` |
 | Journal list is empty | Page disabled, parser drift, or advanced volumes | Check `enabled` / `url`; update EPSL `volumes`; fix the parser |
 | Chinese title shows “暂缺” | Translation rate limit or outage | Rerun `--new-literature`; cached titles are reused; never invent one |
+| `python` exits with code 49 | The Microsoft Store alias stub on `PATH` | Use `uv sync` + `uv run python main.py …`, or install Python from python.org with **Add Python to PATH** |
+| CLI output is mojibake | The console encoded the pipe as GBK/cp936 | Fixed since 0.5.1 (stdout is forced to UTF-8); on older copies set `PYTHONIOENCODING=utf-8` |
+| `UnicodeEncodeError: 'gbk' codec` | An emoji reached a cp936 console | Fixed since 0.5.1 (console markers are ASCII); on older copies set `PYTHONIOENCODING=utf-8` |
 
 More: [rules/TROUBLESHOOTING.md](rules/TROUBLESHOOTING.md), [rules/JOURNALS.md](rules/JOURNALS.md), [rules/MARKDOWN_SPEC.md](rules/MARKDOWN_SPEC.md), [LESSONS.md](LESSONS.md).
 

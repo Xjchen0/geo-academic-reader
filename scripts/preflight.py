@@ -102,6 +102,8 @@ def _run_doctor() -> Dict[str, object]:
             command,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=90,
             cwd=str(PROJECT_ROOT),
         )
@@ -134,11 +136,21 @@ def build_preflight() -> Dict[str, object]:
         blockers.append("环境自检没有返回结果")
 
     chrome = env.get("chrome", {}) if env else {}
+    warnings = []
+    store_aliases = (env.get("python", {}) or {}).get("store_alias_launchers") or []
+    if store_aliases:
+        warnings.append(
+            "PATH 上的 {} 是 Microsoft Store 占位符（退出码 49，无输出）；"
+            "改用 uv run python main.py ... 或从 python.org 安装 Python".format(
+                ", ".join(item.get("name", "?") for item in store_aliases)
+            )
+        )
     return {
         "version": __version__,
         "checked_at": _now().isoformat(timespec="seconds"),
         "ok": not blockers,
         "blockers": blockers,
+        "warnings": warnings,
         "documents": docs,
         "environment": {
             "os": env.get("os", ""),
@@ -277,6 +289,8 @@ def format_report(report: Dict[str, object]) -> str:
         lines.append("Blockers  : " + "; ".join(report["blockers"]))
     else:
         lines.append("Blockers  : none")
+    for warning in report.get("warnings") or []:
+        lines.append("Warnings  : " + warning)
     if not report.get("ok"):
         lines.append("Gate      : BLOCKED (see blockers)")
     elif not profile.get("exists"):

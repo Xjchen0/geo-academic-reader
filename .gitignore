@@ -15,6 +15,10 @@ venv/
 env/
 ENV/
 
+# uv keeps a per-machine resolution; the project supports 3.9-3.12 and pip
+# installs as well, so the lock file stays local.
+uv.lock
+
 # Local extraction artifacts (evidence packs are reproducible; notes and figures are kept)
 .raw/
 .geo-reader/

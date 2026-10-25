@@ -80,6 +80,9 @@
 - 更新只覆盖 `UPGRADE_PATHS` 白名单；`.geo-reader/profile.json` 先备份后恢复。
 - 工作树有未提交的**代码**改动或历史分叉时拒绝更新，绝不 `reset --hard`，绝不 force push。
 - 发布前必须：`py_compile`、完整测试、`--check-note --fix`（若有笔记）、`--index`。
+- 控制台输出属于契约的一部分：stdout/stderr 强制 UTF-8，控制台标记只用 ASCII，
+  `subprocess.run(text=True)` 一律显式 `encoding="utf-8"`。中文 Windows 的管道默认是 cp936，
+  不做这三件事，Agent 读到的是乱码，QA 报告甚至会直接崩在 emoji 上。
 
 ## 8. 本地数据
 

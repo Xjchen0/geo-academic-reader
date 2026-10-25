@@ -18,6 +18,7 @@ from .config import (
     load_profile,
     profile_exists,
 )
+from .console import FAIL, configure_stdio
 from .evidence import extract_evidence
 from .journal_watch import (
     JournalConfigError,
@@ -105,11 +106,11 @@ def _preflight_bypassed(args) -> bool:
 
 def _gate_message(reason: str) -> str:
     return (
-        "\n❌ 会话前置检查未通过：{}\n"
+        "\n{} 会话前置检查未通过：{}\n"
         "   Agent 必须先读 AGENTS.md、MEMORY.md、LESSONS.md，再运行：\n"
         "     python3 main.py --preflight\n"
         "   仅当用户明确要求跳过时才用 --no-preflight（或 GEO_READER_SKIP_PREFLIGHT=1）。\n"
-    ).format(reason)
+    ).format(FAIL, reason)
 
 
 def _guard_literature(args) -> Optional[int]:
@@ -173,7 +174,7 @@ def _run_extraction(source_type: str, value: str, args) -> int:
             quiet=args.json or args.quiet,
         )
     except Exception as exc:
-        print("❌ 抽取失败: {}".format(exc))
+        print("{} 抽取失败: {}".format(FAIL, exc))
         return 1
 
     if args.json:
@@ -211,10 +212,10 @@ def _run_journal_scan(args, days=None, limit=None, sort=None) -> int:
         )
         paths = write_scan(payload)
     except (JournalConfigError, ScanError) as exc:
-        print("❌ 期刊扫描失败: {}".format(exc))
+        print("{} 期刊扫描失败: {}".format(FAIL, exc))
         return 1
     except Exception as exc:
-        print("❌ 期刊扫描失败: {}".format(exc))
+        print("{} 期刊扫描失败: {}".format(FAIL, exc))
         return 1
 
     if args.json:
@@ -238,7 +239,7 @@ def _run_journals_init(args) -> int:
     try:
         result = init_user_config(force=getattr(args, "force", False))
     except JournalConfigError as exc:
-        print("❌ {}".format(exc))
+        print("{} {}".format(FAIL, exc))
         return 1
     if getattr(args, "json", False):
         print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -477,6 +478,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
+    # A Chinese Windows console encodes pipes with cp936/GBK. Without this
+    # the CLI dies with UnicodeEncodeError on the first non-GBK character,
+    # which used to kill the QA gate before it could print a report.
+    configure_stdio()
     parser = build_parser()
     args = parser.parse_args(argv)
 

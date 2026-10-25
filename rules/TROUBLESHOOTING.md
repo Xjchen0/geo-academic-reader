@@ -141,6 +141,11 @@ The check counts only list items under the reference heading and excludes the an
 | `UnicodeDecodeError` on Windows | Console code page is not UTF-8 | Set `PYTHONUTF8=1` before running, or use Windows Terminal. All file I/O in the project is UTF-8. |
 | `pip install -e .` fails | `scripts/` package or build backend mismatch | Use the current tree; `pyproject.toml` expects `scripts/__init__.py`. Then retry. |
 | `geo-reader: command not found` | Editable install did not complete or scripts directory is not on `PATH` | Use `python3 main.py ...` directly, or reinstall with `python3 -m pip install -e .`. |
+| Every `python` / `python3` call exits with code 49 and prints nothing | The Microsoft Store alias stub (`AppData\Local\Microsoft\WindowsApps\python3.exe`) is on `PATH`; there is no real Python yet | Use `uv sync` + `uv run python main.py ...`, or install Python from python.org and tick **Add Python to PATH**. `--preflight` and `doctor.py` name the stub explicitly. |
+| `UnicodeEncodeError: 'gbk' codec can't encode character` | An emoji or other non-cp936 character reached a Chinese Windows console | Fixed since 0.5.1: the CLI forces UTF-8 on stdout/stderr and the console markers are ASCII. On an older copy set `PYTHONIOENCODING=utf-8`. |
+| CLI output arrives as mojibake (`֤�ݰ�…`) | The pipe was encoded with the locale code page (cp936) but decoded as UTF-8 | Fixed since 0.5.1: stdout/stderr are forced to UTF-8. On an older copy set `PYTHONIOENCODING=utf-8`. |
+| `uv sync` fails on `pyproject.toml` | An old `uv` that cannot read PEP 621 metadata | Upgrade `uv` (`uv self update`), or fall back to `python install.py`. |
+| `uv pip install` says "No virtual environment found" | `uv pip` targets an environment, not a project | Run `uv sync` instead; it creates `.venv/` and installs the project. |
 
 ---
 

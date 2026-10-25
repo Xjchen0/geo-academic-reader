@@ -1,6 +1,6 @@
 # geo-academic-reader
 
-[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
+[![Version](https://img.shields.io/badge/version-0.5.1-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-green.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
@@ -52,6 +52,21 @@ python install.py
 
 安装器会检查 Python、装好依赖、报告浏览器情况、建好空的 `papers/` 目录。**它不会问你要 DOI、不会写偏好文件、不会造阅读数据**——那些都在下一步的对话里完成。
 
+**如果你用 `uv` 管理 Python**（Windows 上推荐）：
+
+```bash
+git clone https://github.com/Xjchen0/geo-academic-reader.git
+cd geo-academic-reader
+uv sync                          # 建 .venv/ 并装好项目本体和依赖
+uv run python main.py --preflight
+```
+
+`uv sync` 读 `pyproject.toml`、解析依赖、把项目本身也装进去，所以 `uv run python main.py …` 不用手动激活环境。`install.py` 检测到 `uv` 时会自动改走 `uv sync`。`uv.lock` 被 git 忽略是刻意的：本项目支持 Python 3.9–3.12，也支持 pip 安装，依赖解析留给每台机器自己定——删掉它即可重新解析。
+
+> **Windows 提示**
+>
+> 刚装好的 Windows 上，`PATH` 里的 `python` / `python3` 指向 Microsoft Store 占位符（`AppData\Local\Microsoft\WindowsApps\python3.exe`），它是个 0 字节的桩，**退出码 49** 且没有任何输出。用 `uv sync` + `uv run`，或者从 python.org 安装并勾选 **Add Python to PATH**。现在 `--preflight` 和 `doctor.py` 会直接点名这个占位符，不再只丢一个退出码 49。
+
 可选：把 CLI 装进 `PATH`。
 
 ```bash
@@ -64,6 +79,10 @@ geo-doctor                  # 详细诊断
 
 ```bash
 python3 main.py --preflight
+```
+
+```bash
+uv run python main.py --preflight      # 用 uv 时
 ```
 
 它打印一张检查表，并写入 `.geo-reader/preflight.json`：
@@ -410,6 +429,9 @@ tests/test_updater.py
 | `--update` 拒绝执行 | 代码区脏或历史分叉 | 提交或 `git stash`；绝不 `reset --hard` |
 | 期刊清单为空 | 页面被禁用、解析器漂移或卷号过期 | 检查 `enabled` / `url`；更新 EPSL 的 `volumes`；修解析器 |
 | 中文标题显示"暂缺" | 翻译限流或服务不可用 | 重跑 `--new-literature`；已译条目走缓存；绝不自己编 |
+| `python` 以退出码 49 退出 | `PATH` 上是 Microsoft Store 占位符桩 | 用 `uv sync` + `uv run python main.py …`，或从 python.org 安装并勾选 **Add Python to PATH** |
+| CLI 输出是乱码 | 控制台把管道按 GBK/cp936 编码 | 0.5.1 起已修（stdout 强制 UTF-8）；旧版本请设 `PYTHONIOENCODING=utf-8` |
+| `UnicodeEncodeError: 'gbk' codec` | emoji 撞上 cp936 控制台 | 0.5.1 起已修（控制台标记改用 ASCII）；旧版本请设 `PYTHONIOENCODING=utf-8` |
 
 更多：[rules/TROUBLESHOOTING.md](rules/TROUBLESHOOTING.md)、[rules/JOURNALS.md](rules/JOURNALS.md)、[rules/MARKDOWN_SPEC.md](rules/MARKDOWN_SPEC.md)、[LESSONS.md](LESSONS.md)。
 

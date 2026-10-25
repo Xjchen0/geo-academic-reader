@@ -1,4 +1,4 @@
-# AGENTS.md — geo-academic-reader v0.5.0
+# AGENTS.md — geo-academic-reader v0.5.1
 
 > **Read this file before doing any literature task in this workspace.**
 > The workspace turns papers (DOI / URL / PDF) into a **raw evidence pack**, then the agent writes a **VS Code-ready literature note** from that evidence. The Python pipeline never writes review prose.
@@ -25,6 +25,16 @@ The marker proves the check ran; it does not prove you read the documents. Never
 python3 main.py --preflight          # human checklist
 python3 main.py --preflight --json   # same report, machine-readable
 ```
+
+**Which interpreter?** Use whatever runs the project in this workspace:
+
+| Situation | Command |
+| :--- | :--- |
+| Plain install | `python3 main.py …` (Windows: `python main.py …`) |
+| The project owns a `uv` environment | `uv run python main.py …` |
+| Every `python` / `python3` exits with code 49 | The Microsoft Store alias stub is on `PATH` and there is no real Python. Run `uv sync` once, then use `uv run python main.py …` |
+
+Do not run `uv init` in an existing checkout — `uv sync` is enough, and `uv init` refuses because `pyproject.toml` already exists.
 
 ### 0.1 Check for a profile
 
@@ -503,6 +513,8 @@ For a review covering multiple papers, use `templates/literature_review.md`; eve
 | Marker says `profile_missing` | Finish conversational onboarding, write `.geo-reader/profile.json`, rerun `--preflight` |
 | `--preflight` reports missing docs | Restore `AGENTS.md` / `MEMORY.md` / `LESSONS.md` from the release; never write empty placeholders |
 | `--preflight` reports missing packages | Give the `pip install` line and ask before installing; do not start extraction |
+| Every `python` / `python3` exits with code 49 | The Microsoft Store alias stub is on `PATH`; there is no real Python. Run `uv sync`, then `uv run python main.py …`. Never treat the bare exit 49 as a project bug |
+| CLI output is mojibake on Windows | The pipe was encoded as cp936. Fixed since 0.5.1 (stdout is forced to UTF-8); on an older copy set `PYTHONIOENCODING=utf-8` |
 | A paper/note folder mixes code and data | Check the role line; notes, assets, packs and PDFs are git-ignored in a code repository |
 | “找新文献”没有先给清单 | 运行 `python3 main.py --new-literature`；不要改用主题搜索或从笔记推断 |
 | 扫描结果为 0 | 检查 `.geo-reader/journals.json` 的 `url` / `enabled`；EPSL 先更新 `volumes`；页面改版后可能需要更新对应 `parser` |
