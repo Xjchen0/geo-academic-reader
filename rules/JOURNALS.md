@@ -8,6 +8,10 @@ The strategy is **browser-first, not selector-perfect**. The manifest is the sou
 
 ## New-Article Watch: open the journal pages, not topic search
 
+> **Two different routes.** “找新文献” = this page-scan route (`--new-literature`, journal pages, list only, then stop).
+> “主题综述” = `--thematic-review` (Crossref topic search + per-item DOI/标题/作者/年份/摘要核验, then write).
+> Never feed one route’s list into the other, and never use this route to satisfy a thematic review request.
+
 `python3 main.py --new-literature` answers “find new papers” **only from the configured journal pages** (`journals.json`, or `.geo-reader/journals.json` when present). It never reads `papers/`, `.raw/`, or the conversation to choose a topic.
 
 The command is a listing step, not an extraction step:

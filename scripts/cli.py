@@ -37,6 +37,13 @@ from .preflight import (
     gate_status,
     write_marker,
 )
+from .thematic_review import (
+    DEFAULT_MAX_REFS,
+    build_working_set,
+    parse_doi_list,
+    render_console as render_review_console,
+    write_working_set,
+)
 from .updater import check_for_update, format_check, format_update, update_workspace
 from .version import __version__
 
@@ -62,6 +69,7 @@ MENU = r"""
   [12] 抓取期刊网站新文献（只列候选，不自动精读）
   [13] 创建个人期刊清单 .geo-reader/journals.json
   [14] 会话前置检查（契约 / 环境 / 偏好，文献命令的前置条件）
+  [15] 主题综述工作集（Crossref 逐条核验 + 人工复核清单）
   [0] 退出
 """
 
@@ -95,6 +103,7 @@ def _is_literature_action(args) -> bool:
         or args.pdf
         or args.batch_pdfs
         or args.new_literature
+        or args.thematic_review is not None
         or args.check_note is not None
         or args.index
     )
@@ -249,6 +258,54 @@ def _run_journals_init(args) -> int:
     return 0
 
 
+def _run_thematic_review(args) -> int:
+    """Topic route: verify a working set against Crossref, then hand back a
+    fact-check sheet. The script never writes review prose."""
+    profile = load_profile()
+    mailto = str(profile.get("citation_contact") or "").strip()
+    topic = str(getattr(args, "thematic_review", "") or "").strip()
+    refs = str(getattr(args, "refs", "") or "").strip()
+    anchor = str(getattr(args, "anchor_doi", "") or "").strip()
+
+    if not topic and not refs and not anchor:
+        print("用法：--thematic-review \"主题\" [--refs \"doi1,doi2\"] "
+              "[--anchor-doi 10.xxxx/yyyy]")
+        print("说明：主题综述走 Crossref 核验路线；--new-literature 走期刊页面扫描路线，两者不同。")
+        return 1
+
+    quiet = getattr(args, "json", False) or getattr(args, "quiet", False)
+    logger = None if quiet else (lambda line: print(line, flush=True))
+    try:
+        payload = build_working_set(
+            topic=topic,
+            refs=parse_doi_list(refs),
+            anchor=anchor,
+            max_refs=getattr(args, "max_refs", DEFAULT_MAX_REFS),
+            from_year=getattr(args, "from_year", None),
+            to_year=getattr(args, "to_year", None),
+            mailto=mailto,
+            include_forward=not getattr(args, "no_forward", False),
+            logger=logger,
+        )
+        paths = write_working_set(payload)
+    except Exception as exc:
+        print("{} 主题综述工作集生成失败: {}".format(FAIL, exc))
+        return 1
+
+    if getattr(args, "json", False):
+        result = dict(payload)
+        result["files"] = paths
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    print(render_review_console(payload))
+    print("工作集已写入：")
+    print("  {}".format(paths["candidates"]))
+    print("  {}".format(paths["references"]))
+    print("  {}".format(paths["factcheck"]))
+    return 0
+
+
 def _print_lists(payload: dict) -> None:
     print("\nEvidence packs (.raw/):")
     if not payload["packs"]:
@@ -323,7 +380,7 @@ def interactive_menu() -> int:
     print("当前偏好：{}".format(_profile_summary(profile)))
     print(MENU)
     try:
-        choice = input("请选择 [0-14]: ").strip()
+        choice = input("请选择 [0-15]: ").strip()
     except (KeyboardInterrupt, EOFError):
         print("\n已退出。")
         return 0
@@ -391,6 +448,17 @@ def interactive_menu() -> int:
         return _run_journals_init(_default_args())
     if choice == "14":
         return _run_preflight(_default_args())
+    if choice == "15":
+        if not _menu_gate():
+            return 2
+        topic = input("主题（可留空，只用 --refs/锚定论文）: ").strip()
+        anchor = input("锚定论文 DOI（可留空）: ").strip()
+        refs = input("其它 DOI，逗号分隔（可留空）: ").strip()
+        args = _default_args()
+        args.thematic_review = topic
+        args.anchor_doi = anchor
+        args.refs = refs
+        return _run_thematic_review(args)
     if choice == "0":
         print("再见。")
         return 0
@@ -402,7 +470,9 @@ class _Args:
     def __init__(self, browser=None, wait=4.0, max_figures=30, json=False, quiet=False,
                  prerelease=False, refresh=False, force=False, dry_run=False,
                  days=None, limit=None, sort=None, journal=None, no_translate=False,
-                 no_preflight=False):
+                 no_preflight=False, thematic_review=None, refs="", anchor_doi="",
+                 max_refs=DEFAULT_MAX_REFS, from_year=None, to_year=None,
+                 no_forward=False):
         self.browser = browser
         self.wait = wait
         self.max_figures = max_figures
@@ -418,6 +488,13 @@ class _Args:
         self.journal = journal
         self.no_translate = no_translate
         self.no_preflight = no_preflight
+        self.thematic_review = thematic_review
+        self.refs = refs
+        self.anchor_doi = anchor_doi
+        self.max_refs = max_refs
+        self.from_year = from_year
+        self.to_year = to_year
+        self.no_forward = no_forward
 
 
 def _default_args() -> _Args:
@@ -449,6 +526,16 @@ def build_parser() -> argparse.ArgumentParser:
     group.add_argument("--check-update", action="store_true", help="Check GitHub for a newer release (cached for 6 h)")
     group.add_argument("--update", action="store_true", help="Update the workspace, preserving profile, notes and evidence packs")
     group.add_argument("--new-literature", action="store_true", help="Open the configured journal pages and print numbered candidates; never extracts")
+    group.add_argument(
+        "--thematic-review",
+        nargs="?",
+        const="",
+        metavar="TOPIC",
+        help=(
+            "Build a thematic-review working set: Crossref topic search + per-item "
+            "verification + a human fact-check sheet. Never writes review prose"
+        ),
+    )
 
     parser.add_argument("--journals-init", action="store_true", help="Create .geo-reader/journals.json for editing")
     parser.add_argument("--days", type=int, help="Optional date filter for dated entries; 0 = page as-is (default: journals.json)")
@@ -456,6 +543,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--journal", action="append", metavar="KEY", help="Only scan this journal key (repeatable)")
     parser.add_argument("--sort", choices=["journal", "date"], help="Group candidates by journal or list them by date")
     parser.add_argument("--no-translate", action="store_true", help="Skip Chinese titles in the new-literature scan")
+
+    parser.add_argument("--refs", metavar="DOIS", help="With --thematic-review: comma-separated DOIs or a file holding them")
+    parser.add_argument("--anchor-doi", metavar="DOI", help="With --thematic-review: the anchor paper of the review")
+    parser.add_argument("--max-refs", type=int, default=DEFAULT_MAX_REFS, help="With --thematic-review: maximum verified references (default: 25)")
+    parser.add_argument("--from-year", type=int, help="With --thematic-review: earliest publication year")
+    parser.add_argument("--to-year", type=int, help="With --thematic-review: latest publication year")
+    parser.add_argument("--no-forward", action="store_true", help="With --thematic-review: skip forward-citation lookup")
 
     parser.add_argument("--browser", choices=["auto", "existing", "off"], help="Browser policy (default: profile)")
     parser.add_argument("--no-browser", dest="browser", action="store_const", const="off", help="Alias for --browser off")
@@ -551,6 +645,10 @@ def main(argv=None) -> int:
         return _run_journals_init(args)
     if args.new_literature:
         return _run_journal_scan(args)
+    if args.thematic_review is not None:
+        code = _run_thematic_review(args)
+        _notify_update_if_available(args)
+        return code
 
     if args.doi:
         code = _run_extraction("doi", args.doi, args)

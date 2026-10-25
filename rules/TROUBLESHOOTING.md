@@ -121,6 +121,22 @@ The check counts only list items under the reference heading and excludes the an
 
 ---
 
+## Thematic review errors (`note_type` contains 主题)
+
+| Error code | Cause | Fix |
+| :--- | :--- | :--- |
+| `missing_anchor_paper` | No anchor declared | Put the anchor DOI in the front matter as `anchor_doi:` and add a `## 锚定论文` section |
+| `anchor_not_in_references` | The anchor is declared but is not a reference entry | Add it to `## 参考文献` with its DOI — the anchor is also a source |
+| `missing_competing_explanations` | No 竞争解释 paragraph or section | Write at least two rivals, each with its claim, the criterion it relies on, whether the anchor can exclude it, and what remains open |
+| `missing_later_tests` | No 后续检验 paragraph or section | Name the later works that tested the anchor. If nothing was searched, write “检索未覆盖” |
+| `missing_factcheck_section` | No 人工事实复核 section | Add the section and say which entries were re-checked against the publisher page; the working sheet is `.raw/reviews/<slug>/factcheck.md` |
+| `missing_evidence_tiers` | No evidence tier marker anywhere | Mark key claims with 【直证】/【转述】/【推断】/【评估】/【未核实】 |
+| `thin_evidence_tiers` | Only one or two tiers used (warning) | A review usually needs direct evidence, hearsay and inference/assessment to show how the conclusion is supported |
+
+If `--thematic-review` returns no verified entries, widen the query (`--from-year`, `--to-year`) or add DOIs with `--refs`. Do not fall back to the journal scan to fill the gap — the two routes answer different questions.
+
+---
+
 ## Metadata and citations
 
 | Symptom | Likely cause | What to do |

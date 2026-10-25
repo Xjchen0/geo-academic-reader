@@ -1,6 +1,6 @@
 ---
 name: geo-academic-reader
-version: "0.5.1"
+version: "0.6.0"
 license: MIT
 description: >-
   Browser-first evidence extraction and VS Code-ready literature notes for scientific
@@ -13,7 +13,7 @@ compatibility: >-
   Optional: pymupdf for better PDF figure cropping.
 ---
 
-# geo-academic-reader (v0.5.1)
+# geo-academic-reader (v0.6.0)
 
 A workspace-level workflow, not a one-shot summarizer. The scripts extract evidence; the agent interprets it; a QA command verifies the note before delivery.
 
@@ -96,6 +96,32 @@ The scan reads `journals.json` (user copy `.geo-reader/journals.json` first) and
 Each candidate carries the English title plus a `中文（机译）：` line. The translation is for scanning only — the English title is authoritative. Cache: `.geo-reader/journal-scan/translations.json`; geoscience terms are post-edited on read (fugacity→逸度, sub-arc→弧下). If a title shows “暂缺”, rerun to fill it; never invent one.
 
 **Stop after listing.** Present the English title with its Chinese line, journal, date and DOI; do not run `--doi`, create `.raw/`, or write a note until the user names numbers or DOIs. Never replace the scan with an OpenAlex or web topic search, and never infer the topic from existing notes or the conversation. If a page is empty or reports a challenge, name the page and error; complete Cloudflare checks in the opened Chrome window and rerun the same command. Do not auto-refresh.
+
+---
+
+## 🧭 Thematic Review (verify first, write second, P0)
+
+```bash
+python3 main.py --thematic-review "<topic>" --anchor-doi "10.xxxx/yyyy"
+python3 main.py --thematic-review "<topic>" --refs "10.x/yyy,10.z/www" --from-year 1990
+python3 main.py --thematic-review "<topic>" --anchor-doi <DOI> --max-refs 30 --no-forward
+```
+
+**A thematic review is not the journal scan.** The scan answers "what did these journals publish lately"; a thematic review answers "what does the evidence say about this question". Never substitute one for the other.
+
+The command does three things and writes no prose:
+
+1. **Topic search** — Crossref `query.bibliographic`, relevance-ranked, `type:journal-article`, optionally bounded by `--from-year` / `--to-year`.
+2. **Per-item verification** — every anchor, user-supplied DOI and topic candidate is checked against Crossref for title, authors, year, journal and type, and its abstract is pulled when the publisher deposited one. Entries that fail verification stay “待核验” and must not be cited as fact.
+3. **Citation network** — predecessors from the anchor's Crossref reference list, later tests from OpenAlex forward citations. OpenAlex only *finds* them; every candidate still passes through Crossref.
+
+Output: `.raw/reviews/<slug>/` with `candidates.md` (numbered list + abstracts), `references.json` (structured verification) and `factcheck.md` (the human fact-check sheet).
+
+Then write the note from `templates/thematic_review.md`: an anchor paper (front matter `anchor_doi`, and the anchor must also appear in the reference list), a citation-network table covering prehistory, rivals and later tests, at least two competing explanations with the criterion each one relies on, a later-tests section (“检索未覆盖” when nothing was searched), evidence tiers on every key claim, and a human fact-check section.
+
+**Evidence tiers** — `【直证】` direct from the source, `【转述】` second-hand and not re-checked, `【推断】` author inference or an extrapolation, `【评估】` the writer's own assessment, `【未核实】` not verified and must be flagged. Use at least three; never let a tier go unmarked. Do not write “系统综述” unless the search string, database, date window and inclusion/exclusion rules are actually recorded.
+
+`--check-note` enforces the thematic rules on any note whose `note_type` contains 主题: `missing_anchor_paper`, `anchor_not_in_references`, `missing_competing_explanations`, `missing_later_tests`, `missing_evidence_tiers`, `missing_factcheck_section`.
 
 ---
 

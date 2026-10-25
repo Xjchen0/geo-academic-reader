@@ -78,8 +78,19 @@ def workspace_role() -> Dict[str, object]:
         if path.name.lower() != "index.md"
     ]
     raw_packs = 0
+    review_workspaces = 0
     if RAW_DIR.is_dir():
-        raw_packs = sum(1 for path in RAW_DIR.iterdir() if path.is_dir())
+        for path in RAW_DIR.iterdir():
+            if not path.is_dir():
+                continue
+            # .raw/reviews/<slug>/ holds thematic-review working sets, not
+            # single-paper evidence packs; do not count it as one.
+            if path.name == "reviews":
+                review_workspaces = sum(
+                    1 for child in path.iterdir() if child.is_dir()
+                )
+                continue
+            raw_packs += 1
     role = classify_role(profile_exists(), len(notes), raw_packs)
     return {
         "role": role,
@@ -90,6 +101,7 @@ def workspace_role() -> Dict[str, object]:
         ),
         "notes": len(notes),
         "evidence_packs": raw_packs,
+        "review_workspaces": review_workspaces,
         "profile": profile_exists(),
     }
 

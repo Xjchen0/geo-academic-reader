@@ -75,6 +75,29 @@ AUTO_CITATION_MARKER = "自动构造"
 TABLE_ROW_RE = re.compile(r"^[ \t]*\|.*\|[ \t]*$", re.M)
 TABLE_SEPARATOR_RE = re.compile(r"^[ \t]*\|?[ \t]*:?-{3,}:?[ \t]*(\|[ \t]*:?-{3,}:?[ \t]*)+\|?[ \t]*$")
 
+# A thematic review (note_type contains 主题) is a different artefact from a
+# classic-paper note: it stands on one anchor paper, maps a citation network
+# around it, weighs competing explanations, records later tests, marks the
+# evidence level of every claim, and carries a human fact-check.
+THEMATIC_TYPE_MARKERS = ("主题", "thematic")
+EVIDENCE_TIER_RE = re.compile(r"[【\[]\s*(直证|转述|推断|评估|未核实)\s*[】\]]")
+THEMATIC_ANCHOR_HEADING_RE = re.compile(
+    r"^(#{1,4})[ \t]*.*?(?:锚定论文|锚点论文|anchor\s+paper|anchor\s+work).*$",
+    re.I | re.M,
+)
+THEMATIC_RIVAL_RE = re.compile(
+    r"(?:竞争解释|竞争假说|竞争性解释|competing\s+explanations?|rival\s+hypothes?)",
+    re.I,
+)
+THEMATIC_LATER_RE = re.compile(
+    r"(?:后续检验|后续检验与再评估|later\s+tests?|subsequent\s+tests?|follow[\s-]?up\s+tests?)",
+    re.I,
+)
+THEMATIC_FACTCHECK_RE = re.compile(
+    r"(?:人工事实复核|事实复核|人工核验|fact[\s-]?check)", re.I
+)
+THEMATIC_MIN_TIERS = 3
+
 
 def _line_of(text: str, index: int) -> int:
     return text.count("\n", 0, index) + 1
@@ -186,6 +209,7 @@ def analyse_citations(text: str, front: Dict[str, str]) -> Dict[str, object]:
     is_review = "综述" in note_type or "review" in note_type
     if is_review:
         target = max(target, REVIEW_TARGET)
+    is_thematic = any(marker in note_type for marker in THEMATIC_TYPE_MARKERS)
 
     reference_heading = REFERENCE_HEADING_RE.search(text)
     related_heading = RELATED_HEADING_RE.search(text)
@@ -216,10 +240,12 @@ def analyse_citations(text: str, front: Dict[str, str]) -> Dict[str, object]:
         "depth": depth,
         "target": target,
         "is_review": is_review,
+        "is_thematic": is_thematic,
         "figure_target": REVIEW_FIGURE_TARGET if is_review else NOTE_FIGURE_TARGETS.get(depth, 1),
         "entries": entries,
         "external": external,
         "external_dois": external_dois,
+        "dois": sorted(dois),
         "without_doi": without_doi,
         "duplicate_dois": len({value for value in doi_list if doi_list.count(value) > 1}),
         "has_reference_section": reference_heading is not None,
@@ -426,6 +452,7 @@ def validate_note(note_path: Path, strict: bool = False) -> Dict[str, object]:
         )
 
     citations = analyse_citations(text, parse_front_matter(text))
+    front = parse_front_matter(text)
     if not citations["has_related_section"]:
         issues.append(
             {
@@ -472,7 +499,7 @@ def validate_note(note_path: Path, strict: bool = False) -> Dict[str, object]:
     if citations["max_table_rows"] < 5:
         issues.append(
             {
-                "severity": "warning",
+                "severity": "error" if citations["is_thematic"] else "warning",
                 "code": "missing_citation_table",
                 "line": 0,
                 "message": (
@@ -530,6 +557,98 @@ def validate_note(note_path: Path, strict: bool = False) -> Dict[str, object]:
                     "message": (
                         "正文没有可用的原文图件（{} / {} 张）：{} 深度的笔记应当逐图阅读。"
                     ).format(embedded_images, figure_target, citations["depth"]),
+                }
+            )
+
+    # 主题综述: an anchor paper, a citation network, competing explanations,
+    # later tests, marked evidence levels and a human fact-check. These rules
+    # only fire for note_type containing 主题, so classic-paper notes and the
+    # existing library keep their current behaviour.
+    if citations["is_thematic"]:
+        anchor_front = _normalise_doi(front.get("anchor_doi", ""))
+        anchor_heading = THEMATIC_ANCHOR_HEADING_RE.search(text)
+        if not anchor_front and not anchor_heading:
+            issues.append(
+                {
+                    "severity": "error",
+                    "code": "missing_anchor_paper",
+                    "line": 0,
+                    "message": (
+                        "主题综述必须指明锚定论文：front matter 写 anchor_doi，"
+                        "并设置“## 锚定论文”章节。"
+                    ),
+                }
+            )
+        if anchor_front and anchor_front not in citations["dois"]:
+            issues.append(
+                {
+                    "severity": "error",
+                    "code": "anchor_not_in_references",
+                    "line": 0,
+                    "message": (
+                        "锚定论文 {} 没有出现在参考文献表中；锚定论文也必须是一条可核验的引用。"
+                    ).format(anchor_front),
+                }
+            )
+        if not THEMATIC_RIVAL_RE.search(text):
+            issues.append(
+                {
+                    "severity": "error",
+                    "code": "missing_competing_explanations",
+                    "line": 0,
+                    "message": (
+                        "缺少“竞争解释”段落：至少写出两个竞争假说，"
+                        "并说明每个假说依赖的判据，以及锚定论文能否排除它。"
+                    ),
+                }
+            )
+        if not THEMATIC_LATER_RE.search(text):
+            issues.append(
+                {
+                    "severity": "error",
+                    "code": "missing_later_tests",
+                    "line": 0,
+                    "message": (
+                        "缺少“后续检验”段落：说明锚定论文的结论后来被哪些工作检验过。"
+                        "如果确实没有检索，请写“检索未覆盖”，不要暗示不存在。"
+                    ),
+                }
+            )
+        if not THEMATIC_FACTCHECK_RE.search(text):
+            issues.append(
+                {
+                    "severity": "error",
+                    "code": "missing_factcheck_section",
+                    "line": 0,
+                    "message": (
+                        "缺少“人工事实复核”章节：记录哪些条目已回到原文核对、"
+                        "哪些仍未核验（.raw/reviews/<slug>/factcheck.md 是工作底稿）。"
+                    ),
+                }
+            )
+        tiers = sorted(set(EVIDENCE_TIER_RE.findall(text)))
+        if not tiers:
+            issues.append(
+                {
+                    "severity": "error",
+                    "code": "missing_evidence_tiers",
+                    "line": 0,
+                    "message": (
+                        "没有标注证据层级：关键论断后必须标 【直证】/【转述】/【推断】/"
+                        "【评估】/【未核实】 之一。"
+                    ),
+                }
+            )
+        elif len(tiers) < THEMATIC_MIN_TIERS:
+            issues.append(
+                {
+                    "severity": "warning",
+                    "code": "thin_evidence_tiers",
+                    "line": 0,
+                    "message": (
+                        "只用到 {} 种证据层级（{}）；主题综述通常需要直证、转述、"
+                        "推断/评估至少三层，才能显示结论的支撑结构。"
+                    ).format(len(tiers), "、".join(tiers)),
                 }
             )
 
@@ -779,6 +898,8 @@ def print_report(report: dict) -> None:
             citations.get("max_table_rows", 0),
             citations.get("external_dois", 0),
         ))
+    if citations.get("is_thematic"):
+        print("   路线: 主题综述（锚定论文 + 引用网络 + 竞争解释 + 后续检验 + 证据层级）")
     issues = report.get("issues", [])
     if not issues:
         print("   {} 未发现问题".format(OK))

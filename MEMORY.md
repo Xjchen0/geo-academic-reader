@@ -27,7 +27,7 @@
 
 1. 读 `AGENTS.md` → `MEMORY.md` → `LESSONS.md`。顺序不要颠倒：契约 → 决定 → 教训。
 2. 运行 `python3 main.py --preflight`，与用户确认操作系统、Python、依赖、Chrome、编辑器。
-3. 使用文献命令（`--doi`、`--url`、`--pdf`、`--batch-pdfs`、`--new-literature`、`--check-note`、`--index`）
+3. 使用文献命令（`--doi`、`--url`、`--pdf`、`--batch-pdfs`、`--new-literature`、`--thematic-review`、`--check-note`、`--index`）
    前，preflight 标记必须存在、版本一致、且不超过 24 小时。
 4. 标记缺失或过期时 CLI 以退出码 2 拒绝执行。修复方式是**重新做检查**，不是绕过检查。
 5. `--no-preflight` / `GEO_READER_SKIP_PREFLIGHT=1` 是逃生口，只在用户明确要求跳过时使用，
@@ -52,6 +52,22 @@
   用户给出编号或 DOI 之前，不建证据包、不写笔记。
 - 中文标题是机器翻译，仅供检索；英文原题才是准据。翻译失败写“暂缺”，不要编。
 - 人机验证交给用户在打开的 Chrome 窗口完成；脚本不自动刷新。
+
+## 4b. 主题综述是另一条路线（P0）
+
+- **主题综述 ≠ 找新文献**：前者回答“这个问题上文献证据怎么说”，后者回答“这些刊最近发了什么”。
+  两条路线各产一份清单，不互相冒充、不混用。
+- 主题综述走 `--thematic-review`：Crossref 主题检索出候选 → 逐条核验标题/作者/年份/期刊并抓摘要 →
+  以锚定论文的 Crossref 引用列表取前史、OpenAlex 后继引用取后续检验候选 → 每条仍要过 Crossref 核验。
+- OpenAlex 只用来**找**后续文献，不用来当结论来源；Crossref 是唯一的核验层。
+- 工作集落在 `.raw/reviews/<slug>/`：`candidates.md`、`references.json`、`factcheck.md`。
+  脚本不写正文，`factcheck.md` 是给人过一遍的底稿。
+- 主题综述笔记的硬性结构（`note_type` 含“主题”时 `--check-note` 会拦）：
+  锚定论文（front matter `anchor_doi`，且必须在参考文献表里）、引用网络表、竞争解释 ≥2、
+  后续检验（查不到写“检索未覆盖”）、证据层级 ≥3 种、人工事实复核章节。
+- 证据层级固定五档：`【直证】/【转述】/【推断】/【评估】/【未核实】`。
+  不标层级的主题综述只是又一篇更长的摘要。
+- 没有记录检索式、数据库、时间范围和纳入/排除标准，就不要写“系统综述”“meta 分析”。
 
 ## 5. 经典文献 = 引用网络（P0）
 

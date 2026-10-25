@@ -1,4 +1,4 @@
-# AGENTS.md — geo-academic-reader v0.5.1
+# AGENTS.md — geo-academic-reader v0.6.0
 
 > **Read this file before doing any literature task in this workspace.**
 > The workspace turns papers (DOI / URL / PDF) into a **raw evidence pack**, then the agent writes a **VS Code-ready literature note** from that evidence. The Python pipeline never writes review prose.
@@ -295,6 +295,54 @@ Rules that keep this honest:
 - **EPSL 卷号会前进**：清单用 `vol/699/suppl/C` 这类卷期页；结果异常少时先更新 `volumes`。
 - **不按关键词过滤**：页面列出的就是候选。Nature / Science 这类综合刊会包含非地学论文，这是清单本身的定义，不要临时加主题过滤。
 
+### 1.8 主题综述 = 主题检索 + Crossref 核验 + 锚定论文（P0）
+
+“找新文献”（§1.7）与“主题综述”是**两条不同的路线**，不要混用同一份清单，也不要用其中一条的产物冒充另一条：
+
+| | 找新文献 | 主题综述 |
+| :--- | :--- | :--- |
+| 入口 | `--new-literature` | `--thematic-review "<主题>"` |
+| 打开什么 | `journals.json` 里配置的期刊页面 | Crossref works API（主题检索式） |
+| 回答的问题 | 这些刊最近发了什么 | 围绕这个问题，文献证据怎么说 |
+| 产物 | 编号候选 + 中文机译标题，等用户选 | `.raw/reviews/<slug>/` 工作集（已核验条目 + 事实复核清单） |
+| 谁决定范围 | 期刊页面 | 用户给的主题 + 锚定论文 |
+
+当用户说“写一篇 X 主题的综述”“把 X 方向的研究梳理一遍”“综述一下 X”时，走主题综述路线：
+
+1. 运行 `python3 main.py --thematic-review "<主题>" --anchor-doi <DOI>`。可选 `--refs "doi1,doi2"`（也接受一个 DOI 列表文件）、`--from-year` / `--to-year`、`--max-refs`（默认 25）、`--no-forward`。
+2. 脚本做三件事，**都不写综述正文**：
+   - **主题检索**：Crossref `query.bibliographic` 按相关度排序，给出候选（`type:journal-article`，可按年份过滤）。
+   - **逐条核验**：对锚定论文、用户指定 DOI、主题候选，按优先级用 Crossref 逐条核验标题、作者、年份、期刊、类型，并抓取摘要；核验不通过的条目标为“待核验”，**不得**写进笔记。
+   - **引用网络**：从锚定论文的 Crossref 引用列表取前史候选，从 OpenAlex 取后继引用的后续检验候选。OpenAlex 只用于**找**后续文献，每个候选仍然要过 Crossref 核验。
+3. 产物写到 `.raw/reviews/<slug>/`：
+   - `candidates.md` — 编号清单（角色 / 年份 / 标题 / 期刊 / DOI / 是否有摘要）+ 已核验条目的摘要原文。
+   - `references.json` — 结构化核验结果，含每条的默认证据层级。
+   - `factcheck.md` — **人工事实复核清单**：逐条元数据待核对表、论断级复核表、机器覆盖不到的检查项、复核结论栏。
+4. 读工作集 → 选锚定论文与引用网络 → **人工过一遍 `factcheck.md`** → 用 `templates/thematic_review.md` 写 `papers/<slug>.md` → `--check-note --fix` → `--index`。
+5. `--check-note` 对 `note_type` 含“主题”的笔记额外检查（见 §1.9）：锚定论文、竞争解释、后续检验、证据层级、人工事实复核章节。
+
+> **边界**：主题综述不是“系统综述”。没有记录检索式、数据库、时间范围和纳入/排除标准，就不要写“系统综述”“meta 分析”这类词。
+
+### 1.9 主题综述的证据层级与复核约定（P0）
+
+主题综述必须让读者看见每条结论的支撑强度。关键论断后标一个层级标签：
+
+| 标签 | 含义 | 用法 |
+| :--- | :--- | :--- |
+| 【直证】 | 原文或证据包中可直接查证 | 必须附页码 / 图号 / 原文段落锚点 |
+| 【转述】 | 来自二手来源，尚未回到原文核对 | 写明是谁的转述 |
+| 【推断】 | 作者推断，或由数据外推 | 写明推断依据 |
+| 【评估】 | 笔记者（Agent 或人）的判断 | 不得写成原文结论 |
+| 【未核实】 | 尚未核验 | 必须显式标注，交付前逐条清掉或保留标注 |
+
+约定：
+
+- 至少用到三层；只用一层说明没有真正分层。
+- 锚定论文的 DOI 写在 front matter 的 `anchor_doi`，并且**必须**出现在参考文献表里。
+- “竞争解释”至少两个，每个写清：主张、依赖的判据、锚定论文能否排除、遗留问题。**不能**排除就直说。
+- “后续检验”写不出内容时写“检索未覆盖”，不要暗示不存在后续检验。
+- 交付前必须过一遍 `.raw/reviews/<slug>/factcheck.md`：逐条元数据是否与出版商页面一致、论断是否有锚点、图表数值是否比对过。
+
 ---
 
 ## 2. Directory contract
@@ -309,11 +357,15 @@ Rules that keep this honest:
 | `.raw/<slug>/fulltext.md` | Extracted text with page / section markers. |
 | `.raw/<slug>/figures/manifest.json` | Figure captions, origin, dimensions, local paths. |
 | `.raw/<slug>/README.md` | Human-readable evidence summary + next steps. |
+| `.raw/reviews/<slug>/candidates.md` | Thematic-review candidate list: verified entries, roles, abstracts. |
+| `.raw/reviews/<slug>/references.json` | Structured Crossref verification result (title, authors, year, journal, abstract, tier). |
+| `.raw/reviews/<slug>/factcheck.md` | Human fact-check sheet for a thematic review. |
 | `papers/assets/<slug>/fig_01.png` | Final figure files referenced by notes. |
 | `papers/<slug>.md` | Agent-written literature note (the only review artifact). |
 | `papers/INDEX.md` | Note catalog, maintained by `--index`. |
 | `templates/paper_note.md` | Mandatory single-paper note template. |
-| `templates/literature_review.md` | Multi-paper review template. |
+| `templates/literature_review.md` | Multi-paper review template (经典文献综述). |
+| `templates/thematic_review.md` | Thematic review template (主题综述): anchor paper, citation network, competing explanations, later tests, evidence tiers. |
 | `journals.json` | Shipped journal page list (parser, URL or volume template, enabled flag, per-page waits). |
 | `.geo-reader/journals.json` | User copy, preferred over the shipped list; created by `--journals-init`. |
 | `.geo-reader/profile.json` | Conversational preferences; local and git-ignored. |
@@ -341,6 +393,20 @@ python3 main.py --new-literature
 ```
 
 The scan opens each configured page in Chrome/CDP, parses the page's own entries, adds a cached Chinese machine translation of each title, and writes `.geo-reader/journal-scan/latest.md`. Read that file, present the numbered candidates — English title with the Chinese line beneath it, journal, date, DOI — to the user, and **end the turn**. Do not call `--doi`, do not create `.raw/`, and do not write a note until the user replies with numbers or DOIs. Never invent a Chinese title when translation failed; say it is missing. Details and edge cases: §1.6.
+
+### Step 0b — 主题综述：build a verified working set, then write (P0)
+
+```bash
+python3 main.py --thematic-review "<主题>" --anchor-doi "10.xxxx/yyyy"
+# Add DOIs the user already has (comma separated, or a file holding them):
+python3 main.py --thematic-review "<主题>" --refs "10.x/yyy,10.z/www"
+# Tune the window and the budget:
+python3 main.py --thematic-review "<主题>" --from-year 1990 --to-year 2026 --max-refs 30
+# Skip the forward-citation lookup:
+python3 main.py --thematic-review "<主题>" --anchor-doi <DOI> --no-forward
+```
+
+The command verifies every entry against Crossref and writes `.raw/reviews/<slug>/` with `candidates.md`, `references.json` and `factcheck.md`. It does **not** write prose and does not touch `papers/`. Read the working set, work through `factcheck.md`, then write the note from `templates/thematic_review.md`. Details: §1.8 and §1.9.
 
 ### Step 1 — Session contract and environment check
 
@@ -489,6 +555,8 @@ For a review covering multiple papers, use `templates/literature_review.md`; eve
 - [ ] Profile exists (or onboarding completed in this conversation and saved, then `--preflight` rerun).
 - [ ] “找新文献”只打开了 `journals.json` / `.geo-reader/journals.json` 里的期刊页面，没有按对话主题自选文献。
 - [ ] 候选清单以编号呈现（英文原题 + 中文机译标题），并在用户选择前停止；未创建证据包或笔记。
+- [ ] 主题综述走的是 `--thematic-review`（Crossref 核验）路线，没有拿期刊扫描清单冒充主题检索。
+- [ ] 主题综述：锚定论文已声明且在参考文献表内；竞争解释 ≥2；后续检验已写或写明“检索未覆盖”；证据层级 ≥3 种；人工事实复核章节已落笔。
 - [ ] `doctor.py` clean, or limitations stated.
 - [ ] Evidence pack exists: `paper.json`, `fulltext.md`, `figures/manifest.json`.
 - [ ] Figures preferred from browser; PDF fallback explicitly marked.
@@ -539,5 +607,10 @@ For a review covering multiple papers, use `templates/literature_review.md`; eve
 | `--update` fails to fast-forward | Local history diverged from the release; report it and let the user decide (merge/rebase). Never force |
 | Profile missing after an update | Restore `.geo-reader/backups/profile-<timestamp>.json`; `--update` also restores it automatically |
 | Crossref 404 | Use `--url` or `--pdf`; the pipeline will still build an evidence pack |
+| `--thematic-review` 返回 0 条已核验 | 主题检索式太窄或 `--max-refs` 太小；先放宽 `--from-year` / `--to-year`，再用 `--refs` 补 DOI。**不要**改用期刊扫描凑数 |
+| 主题综述缺少前史/后续检验候选 | 锚定论文的引用列表未在 Crossref 存缴（`fetch_reference_dois` 返回空），或 OpenAlex 无后继引用；改用 `--refs` 指定，或在正文写明“检索未覆盖” |
+| 主题综述待核验条目被写进了笔记 | 待核验条目只能标【未核实】；先用 `--refs` 让它进入核验流程，或从笔记中删除 |
+| `missing_evidence_tiers` | 关键论断后补 【直证】/【转述】/【推断】/【评估】/【未核实】 |
+| `anchor_not_in_references` | 锚定论文也要作为一条参考文献列出（带 DOI） |
 
 Detailed recovery: `rules/TROUBLESHOOTING.md`.

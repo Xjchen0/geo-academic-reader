@@ -120,6 +120,18 @@ def print_guide(profile: Optional[dict] = None) -> None:
    --no-translate 只列英文。
    这一步不会抽取证据包；Agent 必须等你回复编号或 DOI 后再精读。
 
+1b) 主题综述（先核验，再写）
+   python3 main.py --thematic-review "<主题>" --anchor-doi "10.xxxx/yyyy"
+   python3 main.py --thematic-review "<主题>" --refs "doi1,doi2" --from-year 1990
+
+   与“找新文献”不同：这里回答“这个问题上文献证据怎么说”，
+   不是“这些刊最近发了什么”。脚本用 Crossref 主题检索找候选，
+   再逐条核验标题/作者/年份/期刊并抓摘要；从锚定论文的引用列表取前史，
+   从 OpenAlex 取后续检验候选（每条仍要过 Crossref 核验）。
+   产物在 .raw/reviews/<slug>/：candidates.md、references.json、factcheck.md。
+   脚本不写正文；Agent 先过 factcheck.md，再按 templates/thematic_review.md 写笔记，
+   关键论断标【直证】/【转述】/【推断】/【评估】/【未核实】。
+
 2) 抽取证据包（脚本只产出证据，不写综述）
    python3 main.py --doi "10.1038/s41467-026-69772-8"
    python3 main.py --url "https://www.nature.com/articles/..."

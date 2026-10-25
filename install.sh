@@ -4,7 +4,7 @@ set -e
 
 echo "==================================================================="
 echo "  geo-academic-reader Installer (macOS / Linux)"
-echo "  Version: 0.5.1 (MIT License)"
+echo "  Version: 0.6.0 (MIT License)"
 echo "==================================================================="
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
