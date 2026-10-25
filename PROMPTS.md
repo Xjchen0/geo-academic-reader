@@ -184,14 +184,18 @@ python3 main.py --new-literature --no-translate
 ## 6. 多篇综述
 
 ```text
-围绕“<主题>”做一篇文献综述。
+围绕”<主题>”做一篇文献综述。
 
 先用 python3 main.py --list 查看已有证据包；只使用工作区内已抽取的论文，不要凭记忆补文献。
 按 templates/literature_review.md 写作，要求：
 - 明确检索与纳入标准；
 - 区分共识、争议和证据强度；
 - 每篇论文给出 DOI 与本地笔记链接；
-- 证据不足的地方标注“待补检索”。
+- 证据不足的地方标注”待补检索”；
+- 图文并茂：至少嵌入 3 张原文图件（assets/<slug>/fig_XX.png），每张配”读图要点”读图块。
+  关键文献先用 --doi 建立证据包再取图；确实没有可用图件的文献，在正文写明原因，
+  不要用占位图凑数。
+完成后运行 --check-note --fix 与 --index；没有图件的综述会被 review_without_figures 拦下。
 ```
 
 ---
@@ -240,7 +244,9 @@ python3 main.py --new-literature --no-translate
 - 禁止通用段落、示例公式、与本文无关的模板化结论。
 - 每个关键结论后标注证据锚点：PDF 用（第 N 页），网页用（原文第 N 段/节）。
 - 图片路径必须是 assets/<slug>/fig_XX.png（在 papers/ 内）；图注来自 manifest。
-- 不写“颠覆一切”“彻底终结”“完美解决”“前所未有”等措辞。
+- 图文并茂是硬要求：综述至少 3 张原文图，每张配”读图要点”；deep 笔记至少 3 张；
+  缺图的综述会被 --check-note 以 review_without_figures 判为 error。
+- 不写”颠覆一切””彻底终结””完美解决””前所未有”等措辞。
 - 经典文献不是单篇摘要：brief ≥3、standard ≥6、deep ≥10 篇外部文献，综述 ≥15 篇；每条外部文献给 DOI。
 - “找新文献”只扫描 journals.json / .geo-reader/journals.json，先给编号清单（英文原题 + 中文机译标题）并等待选择；不得按主题或对话上下文自选，也不得在选择前抽取。翻译缺失写“暂缺”，不得编造。
 - 引用表至少 5 行，必须写竞争解释与后续检验；不要只列支持本文的工作。

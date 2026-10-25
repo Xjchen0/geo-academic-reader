@@ -1,6 +1,6 @@
 ---
 name: geo-academic-reader
-version: "0.4.0-pre.1"
+version: "0.5.0"
 license: MIT
 description: >-
   Browser-first evidence extraction and VS Code-ready literature notes for scientific
@@ -13,7 +13,7 @@ compatibility: >-
   Optional: pymupdf for better PDF figure cropping.
 ---
 
-# geo-academic-reader (v0.4.0-pre.1)
+# geo-academic-reader (v0.5.0)
 
 A workspace-level workflow, not a one-shot summarizer. The scripts extract evidence; the agent interprets it; a QA command verifies the note before delivery.
 
@@ -184,6 +184,17 @@ Minimum external works, excluding the anchor:
 
 Every external work needs a DOI. Never pad the list with unread papers; if the target cannot be met, say what is missing.
 
+### Figures are not optional
+
+| Note kind | Minimum embedded publisher figures | Check |
+| :--- | :--- | :--- |
+| `note_type` contains `综述` / `review` | 3 | `review_without_figures` — error |
+| `note_depth: deep` | 3 | `note_without_figures` — warning |
+| `note_depth: standard` | 1 | `note_without_figures` — warning |
+| `note_depth: brief` | 0 | — |
+
+A review without figures is a digest. Run `--doi` on the works whose figures carry the argument, copy `papers/assets/<slug>/fig_XX.*` into the note, take the caption verbatim from `figures/manifest.json`, and add a `> **读图要点**` blockquote under each figure. Never embed a cover image or a page icon (`is_body_figure: false`). A broken link does not count towards the quota.
+
 ---
 
 ## 🛠 Quality Gate
@@ -194,7 +205,7 @@ python3 main.py --check-note --fix          # all papers/*.md
 python3 main.py --check-note --strict       # warnings become errors
 ```
 
-Checks: missing images, zero-byte files, invalid image magic bytes, files outside `papers/assets/`, legacy root-level assets, non-standard relative paths, leftover template markers, hyperbole, odd number of `$$`, GitHub alert syntax, missing 文献坐标 / 参考文献 sections, too few external works, missing citation table, references without DOI, duplicate DOIs.
+Checks: missing images, zero-byte files, invalid image magic bytes, files outside `papers/assets/`, legacy root-level assets, non-standard relative paths, leftover template markers, hyperbole, odd number of `$$`, GitHub alert syntax, missing 文献坐标 / 参考文献 sections, too few external works, missing citation table, references without DOI, duplicate DOIs, reviews without figures.
 
 `--fix` rewrites a path only when the intended target is unambiguous, migrates figures from a legacy root `assets/` folder into `papers/assets/` (updating the note, manifest, and `paper.json`), and converts `> [!NOTE]`-style markers into labelled blockquotes. It does not invent citations. Do not delete a figure merely to make the report clean; report it.
 

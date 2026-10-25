@@ -56,6 +56,13 @@ ALERT_LABELS = {
 # one PDF. Targets scale with the note depth declared in the front matter.
 REFERENCE_TARGETS = {"brief": 3, "standard": 6, "deep": 10}
 REVIEW_TARGET = 15
+# A review that cites 15+ works must also show them. Without original figures a
+# review degenerates into a text-only digest, so the review branch carries its
+# own minimum number of embedded publisher figures.
+REVIEW_FIGURE_TARGET = 3
+# Non-review notes: a deep read is expected to walk its figures; a brief note
+# may legitimately carry none.
+NOTE_FIGURE_TARGETS = {"brief": 0, "standard": 1, "deep": 3}
 REFERENCE_HEADING_RE = re.compile(r"^(#{1,3})[ \t]*.*?(?:参考文献|references?)[ \t]*$", re.I | re.M)
 RELATED_HEADING_RE = re.compile(
     r"^(#{1,4})[ \t]*.*?(?:文献坐标|文献定位|文献脉络|研究脉络|引用脉络|学术史|时间线|timeline|related\s+works?|literature\s+context).*$",
@@ -175,7 +182,8 @@ def analyse_citations(text: str, front: Dict[str, str]) -> Dict[str, object]:
         depth = "standard"
     note_type = "{} {}".format(front.get("note_type", ""), front.get("type", "")).lower()
     target = REFERENCE_TARGETS[depth]
-    if "综述" in note_type or "review" in note_type:
+    is_review = "综述" in note_type or "review" in note_type
+    if is_review:
         target = max(target, REVIEW_TARGET)
 
     reference_heading = REFERENCE_HEADING_RE.search(text)
@@ -206,6 +214,8 @@ def analyse_citations(text: str, front: Dict[str, str]) -> Dict[str, object]:
     return {
         "depth": depth,
         "target": target,
+        "is_review": is_review,
+        "figure_target": REVIEW_FIGURE_TARGET if is_review else NOTE_FIGURE_TARGETS.get(depth, 1),
         "entries": entries,
         "external": external,
         "external_dois": external_dois,
@@ -247,6 +257,9 @@ def validate_note(note_path: Path, strict: bool = False) -> Dict[str, object]:
     text = note_path.read_text(encoding="utf-8", errors="replace")
     issues: List[dict] = []
     images = 0
+    # Figures that resolve to a real, readable file. A broken image link is
+    # already an error; it must not count towards the "illustrated" quota.
+    embedded_images = 0
 
     if not text.startswith("---"):
         issues.append(
@@ -330,6 +343,8 @@ def validate_note(note_path: Path, strict: bool = False) -> Dict[str, object]:
                     "ref": ref,
                 }
             )
+        else:
+            embedded_images += 1
 
         if _is_within(resolved, LEGACY_ASSETS_DIR):
             target = _canonical_counterpart(resolved)
@@ -488,6 +503,35 @@ def validate_note(note_path: Path, strict: bool = False) -> Dict[str, object]:
             }
         )
 
+    # 图文并茂: a review that cites 15+ works but shows no figure is a digest,
+    # not a review. Reviews must embed original publisher figures.
+    figure_target = citations["figure_target"]
+    if figure_target and embedded_images < figure_target:
+        if citations["is_review"]:
+            issues.append(
+                {
+                    "severity": "error",
+                    "code": "review_without_figures",
+                    "line": 0,
+                    "message": (
+                        "综述只嵌入了 {} 张图，少于要求的 {} 张：综述必须图文并茂。"
+                        "先用 --doi 为关键文献建立证据包，再从 papers/assets/<slug>/ "
+                        "嵌入原文图件并配“读图要点”。"
+                    ).format(embedded_images, figure_target),
+                }
+            )
+        else:
+            issues.append(
+                {
+                    "severity": "warning",
+                    "code": "note_without_figures",
+                    "line": 0,
+                    "message": (
+                        "正文没有可用的原文图件（{} / {} 张）：{} 深度的笔记应当逐图阅读。"
+                    ).format(embedded_images, figure_target, citations["depth"]),
+                }
+            )
+
     # Display math should be balanced.
     if text.count("$$") % 2 != 0:
         issues.append(
@@ -508,6 +552,7 @@ def validate_note(note_path: Path, strict: bool = False) -> Dict[str, object]:
         "note": str(note_path),
         "title": infer_note_metadata(note_path).get("title", ""),
         "images": images,
+        "embedded_images": embedded_images,
         "issues": issues,
         "errors": sum(1 for issue in issues if issue["severity"] == "error"),
         "warnings": sum(1 for issue in issues if issue["severity"] == "warning"),

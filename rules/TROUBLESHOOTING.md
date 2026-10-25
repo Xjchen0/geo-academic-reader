@@ -114,6 +114,8 @@ This is almost always a path or workspace-root problem. A useful symptom to reco
 | `missing_citation_table` | No table with 4+ data rows | Add `年份 | 工作 | 核心贡献 | 与本文的关系` |
 | `references_without_doi` | Entries with no resolvable DOI | Resolve the DOI, or mark the entry `自动构造，需核对` |
 | `duplicate_reference_doi` | The same work listed twice | Merge the entries |
+| `review_without_figures` | A review embeds fewer than 3 usable figures | Run `--doi` for the key works, copy the images from `papers/assets/<slug>/`, and embed them as `![图 N：图注](assets/<slug>/fig_XX.png)` with a `> **读图要点**` block |
+| `note_without_figures` | A deep note has fewer than 3 figures (warning) | Add the per-figure reading blocks; the images live in `papers/assets/<slug>/` |
 
 The check counts only list items under the reference heading and excludes the anchor paper. It cannot tell whether you actually read a cited paper; padding the list is the one failure it cannot catch, so do not do it.
 

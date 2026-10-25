@@ -1,6 +1,6 @@
 # geo-academic-reader
 
-[![Version](https://img.shields.io/badge/version-0.4.0--pre.1-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
+[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-green.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
@@ -16,26 +16,91 @@ geo-academic-reader is a **literature workspace for AI agents**. Scripts open th
 
 ---
 
-## In 30 seconds
+## 1. Install and deploy
 
-| Step | Who | Output |
-| :--- | :--- | :--- |
-| Capture | Scripts | `.raw/<slug>/`: metadata, page-anchored text, figure manifest, provenance |
-| Interpret | Agent | `papers/<slug>.md`: a note with evidence anchors |
-| Verify | Scripts | `--check-note --fix`: figures, template residue, citation network, Markdown compatibility |
-| Keep | Scripts | `papers/assets/<slug>/` + `papers/INDEX.md`: self-contained, previewable, searchable |
+### 1.1 Requirements
 
-The scripts **never write review prose**. That is deliberate: a generator that fills every section makes a shallow note look like a close reading.
+| Requirement | Version | Why | If missing |
+| :--- | :--- | :--- | :--- |
+| Python | ≥ 3.9 | Runs the CLI and the QA engine | Upgrade first; nothing else works below 3.9 |
+| `requests`, `beautifulsoup4`, `pypdf`, `websockets` | latest | Fetch, parse, PDF text, Chrome DevTools Protocol | `pip install requests beautifulsoup4 pypdf websockets` |
+| `pymupdf` | optional | Faster PDF image extraction | `pip install pymupdf` |
+| Chrome / Chromium / Edge | any recent | **Browser-first figures** | Install a browser, or accept `--browser off` (lower-quality figures) |
+| An AI agent | VS Code, Cursor, Claude Code, Antigravity, Windsurf, or a terminal agent | The agent reads the contract and writes the note | — |
 
----
+`pymupdf` is the only optional package. Everything else is required.
 
-## Quick start
+### 1.2 Install
 
 ```bash
 git clone https://github.com/Xjchen0/geo-academic-reader.git
 cd geo-academic-reader
-./install.sh          # Windows: .\install.ps1   |   any platform: python install.py
+./install.sh          # macOS / Linux
 ```
+
+```powershell
+git clone https://github.com/Xjchen0/geo-academic-reader.git
+cd geo-academic-reader
+.\install.ps1         # Windows
+```
+
+Any platform, no shell differences:
+
+```bash
+python install.py
+```
+
+The installer checks Python, installs the required packages, reports the browser situation, and creates the empty `papers/` tree. **It never asks for a DOI, never writes a profile, and never creates reading data** — that happens in conversation, in step 2.
+
+Optional: put the CLI on your `PATH`.
+
+```bash
+pip install -e .
+geo-reader --preflight      # the same entry point as python3 main.py
+geo-doctor                  # verbose diagnostics
+```
+
+### 1.3 Verify the installation
+
+```bash
+python3 main.py --preflight
+```
+
+It prints one checklist and writes `.geo-reader/preflight.json`:
+
+| Check | Healthy | If missing |
+| :--- | :--- | :--- |
+| Contract docs | `AGENTS.md`, `MEMORY.md`, `LESSONS.md` present | Restore them from the release; never write empty placeholders |
+| OS and Python | Python ≥ 3.9 | Give the upgrade path; do not continue |
+| Packages | `requests`, `beautifulsoup4`, `pypdf`, `websockets` | Give the exact `pip install` line; **ask before installing** |
+| Browser | Chrome / Chromium / Edge; CDP 9222 optional | Offer to install, or accept HTTP/PDF fallback with lower-quality figures |
+| Editor | The profile's editor; `.vscode/settings.json` | Explain how to create it; do not change settings unasked |
+| Workspace role | `code repository` or `test workspace` | Explain whether this folder carries local reading data |
+
+The marker is valid for **24 hours and tied to this version**. `--doi`, `--url`, `--pdf`, `--batch-pdfs`, `--new-literature`, `--check-note` and `--index` require it; otherwise the CLI exits 2. The fix is to re-run the check — never to bypass it.
+
+> **Why a gate**
+>
+> Agents tend to run commands first and read the contract later. The marker turns "skipped the check" into an explicit failure instead of a silent downgrade. It proves the check ran; it does not prove the documents were read — so the documents also say: never fabricate the marker.
+
+### 1.4 Deploy as a reading workspace (recommended)
+
+The same repository has two roles. `--preflight` detects which one and prints it on the `Role:` line:
+
+| Role | Detected when | Carries | Does not carry |
+| :--- | :--- | :--- | :--- |
+| **Code repository** | No profile, no notes, no packs | Code, templates, docs, `journals.json`, empty `papers/` | Preferences, notes, figures, packs, PDFs |
+| **Test / reading workspace** | Any of the above exists | Code + profile + notes + figures + packs + `input_pdfs/` | — |
+
+- `papers/*.md`, `papers/assets/*`, `input_pdfs/*.pdf`, `reading_list_*.md`, `.raw/` and `.geo-reader/` are git-ignored.
+- A code repository keeps only `papers/.gitkeep` and `papers/assets/.gitkeep`: the structure is visible, the data is absent.
+- Updates replace code and docs only; they **never write** to `papers/`, `.raw/`, `.geo-reader/` or `input_pdfs/`.
+
+**Recommended deployment**: clone the remote twice. Keep one checkout clean for commits and releases; use the other for daily reading. They share code history but never share local preferences, notes or evidence packs.
+
+---
+
+## 2. Quick start
 
 Open the folder in your agent (VS Code, Cursor, Claude Code, Antigravity, Windsurf, or a terminal agent) and say:
 
@@ -46,45 +111,14 @@ Open the folder in your agent (VS Code, Cursor, Claude Code, Antigravity, Windsu
 (English is fine too: `Start`.) The agent will:
 
 1. read `AGENTS.md`, `MEMORY.md` and `LESSONS.md` instead of guessing from flags;
-2. run `python3 main.py --preflight` and confirm OS, Python, packages, Chrome and editor with you;
-3. ask a few preference questions and write `.geo-reader/profile.json`;
+2. run `python3 main.py --preflight` and confirm OS, Python, packages, Chrome, editor and workspace role with you, in plain language;
+3. ask seven short preference questions and write `.geo-reader/profile.json`;
 4. rerun preflight so literature commands unlock;
-5. give a short tour of the tree and one optional first exercise.
+5. give a short tour of the tree and offer exactly one first exercise.
 
-**No setup command, no wizard, and no files written before that conversation.** Say `重新设置偏好` / `Reconfigure` to change preferences later.
+**No setup command, no wizard, and no files written before that conversation.** Say `重新设置偏好` / `Reconfigure` to change preferences later; they persist across sessions and across updates.
 
-First paper:
-
-```text
-Read DOI 10.1038/s41467-026-69772-8
-```
-
-The agent extracts the evidence pack, writes the note, then runs `--check-note --fix` and `--index`. Copy-paste prompts: [PROMPTS.md](PROMPTS.md).
-
----
-
-## First run: what the agent confirms
-
-### 1. Environment first
-
-`python3 main.py --preflight` prints a checklist; the agent walks through it with you in plain language:
-
-| Check | Healthy | If missing |
-| :--- | :--- | :--- |
-| Contract docs | `AGENTS.md`, `MEMORY.md`, `LESSONS.md` present | Stop and restore them from the release; never write empty placeholders |
-| OS and Python | Python ≥ 3.9 | Give the upgrade path; do not continue |
-| Packages | `requests`, `beautifulsoup4`, `pypdf`, `websockets` | Give the exact `pip install` line; **ask before installing** |
-| Browser | Chrome / Chromium / Edge; CDP 9222 optional | Offer to install, or accept HTTP/PDF fallback with lower-quality figures |
-| Editor | The profile's editor; `.vscode/settings.json` | Explain how to create it; do not change settings unasked |
-| Workspace role | `code repository` or `test workspace` | Explain whether this folder carries local reading data |
-
-Preflight writes `.geo-reader/preflight.json`: valid for **24 hours, tied to the version**. `--doi`, `--url`, `--pdf`, `--batch-pdfs`, `--new-literature`, `--check-note` and `--index` require it; otherwise the CLI exits 2. The fix is to re-run the check, not to bypass it.
-
-> **Why a gate**
->
-> Agents tend to run commands first and read the contract later. The marker turns "skipped the check" into an explicit failure instead of a silent downgrade. It proves the check ran; it does not prove the documents were read — so the documents also say: never fabricate the marker.
-
-### 2. Preferences: seven questions
+### 2.1 The preferences it asks for
 
 | Option | Values | Effect |
 | :--- | :--- | :--- |
@@ -96,169 +130,215 @@ Preflight writes `.geo-reader/preflight.json`: valid for **24 hours, tied to the
 | Citation format | `apa`, `nature`, `gbt7714` | Reference style |
 | Journal list | Shipped 17 pages/sections, or custom | Which pages “find new papers” opens |
 
-Defaults are `zh-CN`, VS Code, balanced, auto, deep, APA, and the shipped `journals.json`. “Use defaults” is a valid answer. Preferences live locally, are git-ignored, and survive sessions and updates.
+Defaults are `zh-CN`, VS Code, balanced, auto, deep, APA, and the shipped `journals.json`. “Use defaults” is a valid answer.
 
-### 3. A tour of the tree
+### 2.2 The loop
 
-| Path | Purpose | Do you need it? |
-| :--- | :--- | :--- |
-| `papers/<slug>.md` | The note you read and cite | Yes |
-| `papers/assets/<slug>/` | Its figure library, inside `papers/` | Loaded automatically |
-| `.raw/<slug>/` | Evidence pack: metadata, text, captions, provenance | When checking a claim |
-| `.geo-reader/profile.json` | Your preferences | Only when changing them |
-| `.geo-reader/journal-scan/latest.md` | The last candidate list | Yes |
-| `templates/paper_note.md` | Note template and writing rules | When customising structure |
-| `journals.json` | Shipped journal pages | Rarely |
-| `MEMORY.md` / `LESSONS.md` | Durable decisions and failure modes | The agent reads them every session |
+```text
+python3 main.py --doi "<DOI>"            →  .raw/<slug>/  +  papers/assets/<slug>/
+        ↓  the agent writes the note
+papers/<slug>.md                          →  from templates/paper_note.md
+        ↓
+python3 main.py --check-note papers/<slug>.md --fix
+python3 main.py --index papers/<slug>.md
+```
 
-### 4. One first exercise
+First paper:
 
-- **Find new papers**: open the configured journal pages, list numbered candidates (English title + Chinese machine translation), then wait for your choice.
-- **Read one paper**: give a DOI, URL or PDF; get an evidence pack and a note.
-- **Look around**: `python3 main.py --list` shows existing packs and notes.
+```text
+精读 DOI 10.1038/s41467-026-69772-8
+```
 
----
+The agent extracts the evidence pack, writes the note, then runs `--check-note --fix` and `--index`. Copy-paste prompts for every task: [PROMPTS.md](PROMPTS.md).
 
-## Two folders: code repository vs test workspace
+### 2.3 What you end up with
 
-The same repository can exist in two roles. `--preflight` detects which one and prints it on the `Role:` line:
-
-| Role | Detected when | Carries | Does not carry |
-| :--- | :--- | :--- | :--- |
-| **Code repository** | No profile, no notes, no packs | Code, templates, docs, `journals.json`, empty `papers/` | Preferences, notes, figures, packs, PDFs |
-| **Test / reading workspace** | Any of the above exists | Code + profile + notes + figures + packs + `input_pdfs/` | — |
-
-- `papers/*.md`, `papers/assets/*`, `input_pdfs/*.pdf`, `reading_list_*.md`, `.raw/` and `.geo-reader/` are git-ignored.
-- A code repository keeps only `papers/.gitkeep` and `papers/assets/.gitkeep`: the structure is visible, the data is absent.
-- Check `Role:` before publishing. Committing from a test workspace mixes your reading data into the release.
-- Updates replace code and docs only; they **never write** to `papers/`, `.raw/`, `.geo-reader/` or `input_pdfs/`.
-
-**Recommended setup**: clone the remote twice. Keep one checkout clean for commits and releases; use the other for daily reading and testing. They share code history but never share local preferences, notes or evidence packs.
+```text
+papers/
+├── <slug>.md                 the note you read and cite
+├── INDEX.md                  the catalogue (generated by --index)
+└── assets/<slug>/fig_01.png  the figure library, inside papers/ so VS Code renders it
+```
 
 ---
 
-## Daily workflow
+## 3. The two core functions
 
-### 0. Find new papers: list first, then stop
+Both are triggered by **plain language**, not by a flag. The agent recognises the intent and drives the scripts.
+
+### 3.1 New-paper briefing — “找新文献”
+
+**Trigger:** say `找新文献` / `最近有什么新文章` / `看看期刊新文章` / “recommend some recent papers”.
+
+```text
+找新文献。
+```
+
+What happens:
+
+1. The agent runs `python3 main.py --new-literature`, which opens **only the journal pages configured in `journals.json` / `.geo-reader/journals.json`** — Nature research-articles, Science First Release / Current, Science Advances, EPSL volumes, AGU journals, Geology current and early publication, GJI, PNAS Earth (17 pages/sections in the shipped list).
+2. Each page is parsed for the entries the page itself lists; results are written to `.geo-reader/journal-scan/latest.md` and `latest.json`.
+3. The agent presents **numbered candidates** — English title, a Chinese machine translation marked as such, journal, date, DOI — and **stops**.
+
+```text
+1. Nature — "Deep mantle convection beneath the Pacific"
+   中文（机译）：太平洋之下的深部地幔对流
+   2026-10-22 · https://doi.org/10.1038/s41586-026-00000-0
+```
+
+**It only lists.** No evidence pack, no note, no extraction until you reply with numbers or DOIs. Then the agent processes them one by one.
+
+Hard rules the agent follows:
+
+- Never search by topic, never guess from your notes or from the conversation. The journal list is the definition of what “new papers” means.
+- The English title is authoritative; the Chinese line is machine translation for scanning only.
+- A missing translation shows “暂缺” — never an invented title.
+- Cloudflare / human-verification pages are handed to you: complete the check in the opened Chrome window and rerun the same command. The scan never auto-refreshes.
+
+Tuning:
 
 ```bash
-python3 main.py --new-literature
+python3 main.py --journals-init                  # create your editable journal list
 python3 main.py --new-literature --journal epsl --journal geology_early
-python3 main.py --new-literature --days 3          # optional date filter
-python3 main.py --new-literature --no-translate    # English-only list
-python3 main.py --journals-init                    # create an editable journal list
+python3 main.py --new-literature --days 3        # optional date filter; default 0 = page as-is
+python3 main.py --new-literature --no-translate  # English-only list
 ```
 
-The scan opens each configured page in Chrome/CDP — Nature research-articles, Science First Release / Current, Science Advances, EPSL volumes, AGU journals, Geology current and early publication, GJI, PNAS Earth — parses the entries the page itself lists, writes `.geo-reader/journal-scan/latest.md`, and prints numbered candidates.
+### 3.2 Classic-paper reading — “经典文献分享”
 
-Each candidate has a **Chinese machine translation** marked “machine translation, for scanning only”; the English title is authoritative. Translations are cached by English title and only new entries are requested. A failed translation shows “暂缺” rather than an invented title.
+**Trigger:** say `把 <DOI / URL / PDF> 当作一篇经典文献来读` / `经典文献分享` / “do a deep read of this classic”.
 
-This step **only lists**. The agent must not extract or write a note until you reply with numbers or DOIs. If a page hits Cloudflare, complete the check in the opened Chrome window and rerun the same command; the scan does not auto-refresh.
-
-### 1. Extract an evidence pack
-
-```bash
-python3 main.py --doi "10.1038/s41467-026-69772-8"
-python3 main.py --url "https://www.nature.com/articles/s41467-026-69772-8"
-python3 main.py --pdf "input_pdfs/my_paper.pdf"
-python3 main.py --batch-pdfs
+```text
+把 10.1073/pnas.2510972122 当作一篇经典文献来读。
 ```
 
-Useful options: `--browser auto|existing|off`, `--wait 6`, `--max-figures 20`, `--json`. The command prints the slug, paths, figure count, actual route (e.g. `text=browser; figures=browser`) and warnings. It **does not create the note**.
+A classic-paper note is **not a summary of one PDF**. It is a citation network: what the paper inherited, what it argued against, and what later work did to it.
 
-### 2. Write the note
+The agent will:
 
-Hand the evidence pack and `templates/paper_note.md` to the agent. A typical instruction:
+1. build the evidence pack (`--doi` / `--url` / `--pdf`);
+2. find the paper's **prehistory** (who it answers), the **competing explanations of its time** (at least two, each with the criterion it depends on), and the **later tests or corrections**;
+3. write `## 0. 文献坐标` with a `年份 | 工作 | 核心贡献 | 与本文的关系` table of at least 5 data rows;
+4. cite at least **10 external works** for a deep read (**15** for a review), each with a DOI; unverifiable entries are marked “自动构造，需核对”;
+5. state explicitly **which competing explanations the evidence rules out and which it does not** — “not discussed” is not “ruled out”;
+6. say “这部分检索未覆盖” instead of padding the list with unread papers;
+7. embed **original figures** from the evidence packs and give each one a `> **读图要点**` reading block;
+8. finish with `--check-note --fix` and `--index`.
 
-> Read `.raw/<slug>/` and write `papers/<slug>.md` using `templates/paper_note.md`. Use only the extracted text and manifest captions; invent no equations or conclusions. Link figures as `assets/<slug>/fig_XX.png`. Anchor each key claim to a page or section. Place the paper in its citation network: prehistory, competing explanations, later tests, with a DOI for every external work. Finish with `--check-note --fix` and `--index`.
+Minimum external works by depth:
 
-### 3. Verify and index
+| `note_depth` | Minimum external works | Typical use |
+| :--- | :--- | :--- |
+| `brief` | 3 | One-page brief |
+| `standard` | 6 | Default single-paper note |
+| `deep` | 10 | Classic-paper deep read |
+| `note_type: 经典文献综述` | 15 | Multi-paper review |
 
-```bash
-python3 main.py --check-note "papers/<slug>.md" --fix
-python3 main.py --index "papers/<slug>.md"
-python3 main.py --list
-```
-
-`--check-note` verifies that figures exist, are non-zero and are real images, live under `papers/assets/`, and that the note has no template residue, hyperbole, unbalanced `$$` or GitHub alert syntax. It also checks the citation network: 文献坐标 section, a ≥5-row citation table, external-work count, DOI coverage and duplicate DOIs. `--fix` rewrites only unambiguous paths, migrates a legacy figure library, and converts alert markers to labelled blockquotes. `--strict` treats warnings as errors.
-
-### 4. Check for updates
-
-```bash
-python3 main.py --check-update        # e.g. 0.3.3 → 0.4.0, or “up to date”
-python3 main.py --update --dry-run    # preview the target
-python3 main.py --update              # update; keep profile, notes and packs
-```
-
-Checks are cached for 6 hours and exit 0 when GitHub is unreachable, so an offline reading task never fails. Git checkouts use `git merge --ff-only <tag>`; a copy without `.git` uses a shallow sparse clone, then the release tarball. A dirty **code** tree or diverged history is refused, never reset. Use `--prerelease` only when deliberately tracking prereleases.
+Figures are not optional here either: a review must embed at least **3** original figures, a deep note at least **3**; `--check-note` reports `review_without_figures` as an error.
 
 ---
 
-## Command reference
+## 4. Why the route goes through the web
 
-```text
-python3 main.py --preflight              contract docs + environment + profile + role (24 h marker)
-python3 main.py --no-preflight ...       skip the gate for this command (explicit user consent only)
-python3 main.py --doi DOI                extract an evidence pack by DOI
-python3 main.py --url URL                extract from an article URL
-python3 main.py --pdf PATH               extract from a local PDF
-python3 main.py --batch-pdfs             process every PDF in input_pdfs/
-python3 main.py --new-literature         open configured journal pages; list only
-python3 main.py --journals-init          create .geo-reader/journals.json
-python3 main.py --check-note [NOTE]      check one note or all notes
-python3 main.py --index NOTE             add/update a row in papers/INDEX.md
-python3 main.py --list                   list evidence packs and notes
-python3 main.py --profile [--json]       show current preferences
-python3 main.py --guide                  print the quick-start guide
-python3 main.py --check-update           check GitHub for a newer release
-python3 main.py --update                 update code; keep preferences, notes and packs
-python3 main.py --doctor                 verbose environment diagnostics
-python3 main.py                          interactive menu (terminal only)
-```
+This is the part that makes the output different from “paste a PDF into a chat window”.
 
-After `pip install -e .`, `geo-reader` and `geo-doctor` are also available.
+**The publisher's page is the only place where the figures, the caption, the supplementary material and the version of record coexist.** Everything else is a second-hand copy.
+
+| | Straight from the web | PDF-only fallback |
+| :--- | :--- | :--- |
+| Figure resolution | Publisher's original asset (often 1000–2000 px wide) | Embedded bitmap, often ≤ 600 px, sometimes a page crop |
+| Captions | Full caption, often with the panel explanation | Missing, or split across the page |
+| Supplementary | Figures, tables and methods linked from the article page | Absent |
+| Version of record | The published version, with corrections | Whatever you happened to download |
+| Provenance | Recorded as `browser` or `http` in `figures/manifest.json` | Recorded as `pdf` — and said so in the note |
+
+The pipeline therefore runs a strict fallback chain for every paper:
+
+1. **Chrome/CDP first** (`--browser auto`, the default) — the agent opens the real article page and takes the publisher's own image assets.
+2. **Direct HTTP second** — same assets, no browser, used when the browser fails.
+3. **PDF-embedded images last** — only when both of the above fail. When this happens, the note says so explicitly and the manifest records `origin: pdf`.
+
+A PDF page crop is never presented as a publisher figure, and the origin recorded in `figures/manifest.json` is the only thing the agent is allowed to report — never a guess.
+
+**Why this matters for the reading itself:**
+
+- A figure is usually the *evidence* for a claim. A low-resolution or cropped figure cannot support a claim about a panel's shape, a curve's inflection or an error bar's width — and a note that quotes such a figure is over-reading it.
+- Figure captions carry the conditions: sample size, projection, age model, filter. A cropped panel loses the caption, so it loses the conditions.
+- Browsing the live page also gets the *metadata of the discussion* — later versions, corrections, and the linked prior work that a citation network needs.
+
+**What we ask of the agent, and what we ask of you:**
+
+- The agent opens the browser for any paper that has a web version. If a page shows a human-verification challenge, it stops and asks you to click it — it never refreshes, never guesses, never silently switches to a lower-fidelity source. Only genuinely PDF-only papers use PDF cropping.
+- If the text comes back shorter than 800 characters, or the figure list is empty, the agent reports that instead of writing a review anyway.
 
 ---
 
-## Directory layout
+## 5. The other functions
+
+All of these have copy-paste prompts in [PROMPTS.md](PROMPTS.md). Same trigger style, same contract.
+
+| Task | Trigger | What you get |
+| :--- | :--- | :--- |
+| **Single paper, DOI** | `精读 DOI <doi>` | An IMRaD-style note with per-figure reading, evidence anchors, and the paper placed in its citation network |
+| **Single paper, URL** | `精读这篇论文：<URL>` | The same, with a note on whether the page needed a login or a human check |
+| **PDF only** | `精读 input_pdfs/<file>.pdf` | The DOI is extracted from the PDF; browser figures are still preferred if a DOI exists |
+| **Batch PDFs** | `批量精读 input_pdfs/ 下的所有 PDF` | One note per PDF, processed one at a time, plus a summary table of title / year / journal / text source / figure source / figure count / failures |
+| **Review (multi-paper)** | `围绕"<主题>"做一篇文献综述` | A structured review: search and inclusion criteria, consensus vs controversy vs evidence strength, DOI per paper, links to local notes, **at least 3 original figures** with reading blocks, and explicit “待补检索” markers where evidence is thin |
+| **Reviewer-style re-read** | `按"审稿人"视角重读 papers/<slug>.md` | A critique list, not a rewrite: core claim, weakest link, assumptions and boundary conditions, whether the figures really support the text, and the three cheapest checks to run next |
+| **Note health check** | `运行 --check-note --fix` | Every remaining error explained, image files verified by magic bytes, genuinely missing figures marked rather than deleted |
+| **Index maintenance** | `检查 papers/ 下所有笔记` | Missing front matter reported, `--index` re-run, and duplicate or inconsistent rows in `papers/INDEX.md` listed |
+| **Update** | `检查更新` / `更新` | `--check-update` (cached 6 h, exits 0 offline), then `--update` on your word. Preferences, notes, figures, packs and PDFs are preserved; a dirty or diverged tree is refused, never reset |
+| **Reconfigure** | `重新设置偏好` | The seven questions again; `created_at` is kept, `updated_at` is refreshed |
+
+Two structural rules apply to every task:
+
+- **The scripts never write review prose.** A generator that fills every section makes a shallow note look like a close reading. The scripts produce evidence; the agent writes.
+- **Every key claim carries an evidence anchor**: `（第 3 页）` for PDF, `（原文 §Results 第 2 段）` for web, `（图 2）` for a figure.
+
+---
+
+## 6. The Python code
+
+The whole system is about 6,800 lines of dependency-light Python. It is deliberately split so that the evidence layer and the writing layer never mix.
+
+### 6.1 Entry points
+
+| File | Role |
+| :--- | :--- |
+| `main.py` | Thin wrapper around `scripts/cli.py` |
+| `doctor.py` | Verbose environment diagnostics, `--json`, `--install`, `--launch-chrome` |
+| `install.py` / `install.sh` / `install.ps1` | Cross-platform installer |
+| `uninstall.py` | Removes the package and build caches; never touches `papers/` or `.raw/` |
+
+### 6.2 Module map
+
+| Module | Lines | Responsibility |
+| :--- | :--- | :--- |
+| `scripts/cli.py` | 588 | Argument parsing, command dispatch, human-readable output |
+| `scripts/fetch_paper.py` | 635 | Crossref metadata, article-page text, DOI extraction from PDFs |
+| `scripts/browser.py` | 599 | Chrome DevTools Protocol client: launch, navigate, wait, screenshot, fetch image assets |
+| `scripts/figures.py` | 260 | Figure discovery, download, `image_magic` validation, manifest writing |
+| `scripts/evidence.py` | 654 | Evidence-pack assembly: `paper.json`, `fulltext.md`, `figures/manifest.json`, `README.md` |
+| `scripts/note_check.py` | 931 | The QA engine: figures, image paths, template residue, hype words, `$$` balance, GitHub alerts, citation network, `--fix` |
+| `scripts/journal_watch.py` | 1131 | Journal page parsers (`nature`, `science_*`, `epsl`, `agu`, `geology_*`, `gji`, `pnas`), candidate listing |
+| `scripts/translate.py` | 287 | Chinese machine translation of titles, with a cache and a geology term post-edit pass |
+| `scripts/updater.py` | 749 | Release check, fast-forward update, sparse-clone fallback, backup and restore of the profile |
+| `scripts/preflight.py` | 291 | The session marker: docs, environment, profile, workspace role |
+| `scripts/onboarding.py` | 156 | Preference schema and the question set |
+| `scripts/config.py` | 165 | Paths, profile choices, reference targets |
+| `scripts/version.py` | 3 | Single source of truth for the version |
+
+### 6.3 The evidence-pack contract
 
 ```text
-geo-academic-reader/
-├── AGENTS.md                    Session contract, onboarding, SOP
-├── MEMORY.md                    Durable decisions that survive versions
-├── LESSONS.md                   Failure modes and what they changed
-├── PROMPTS.md                   Copy-paste task prompts
-├── SKILL.md                     Skill manifest and condensed contract
-├── journals.json                Shipped journal pages (parser, URL, volumes)
-├── input_pdfs/                  PDF drop-zone (local, git-ignored)
-├── papers/                      Self-contained knowledge base
-│   ├── INDEX.md                 Note catalogue (generated locally)
-│   ├── <slug>.md                Agent-written note
-│   └── assets/<slug>/fig_XX.png Figure library, same tree as the note
-├── .raw/<slug>/                 Evidence pack (local, git-ignored)
-│   ├── paper.json
-│   ├── fulltext.md
-│   ├── figures/manifest.json
-│   └── README.md
-├── .geo-reader/                 Local state (git-ignored)
-│   ├── profile.json             Preferences
-│   ├── preflight.json           24 h session marker
-│   ├── journals.json            User journal list (preferred over the shipped one)
-│   └── journal-scan/
-│       ├── latest.md            Latest numbered candidate list
-│       └── translations.json    Chinese-title cache
-├── templates/                   Note and review templates
-├── rules/                       Markdown, journal and troubleshooting rules
-├── scripts/                     Extraction, QA, preflight, CLI
-├── main.py / doctor.py          Entry point / environment diagnostics
-└── install.* / uninstall.*
+.raw/<slug>/
+├── paper.json           bibliographic metadata, APA string, extraction method, warnings, stats
+├── fulltext.md          extracted text with page markers — evidence, not a summary
+├── figures/manifest.json the sole authority for captions, origins and dimensions
+└── README.md            human-readable summary and next steps
 ```
 
-### Evidence-pack contract
-
-`paper.json`: bibliographic metadata, APA string and whether it was constructed, extraction method, open-access status, warnings, stats and relative paths.
-`fulltext.md`: raw extracted text with page markers — evidence, not a summary.
-`figures/manifest.json`: the sole authority for captions and figures.
+`figures/manifest.json` fields:
 
 | Field | Meaning |
 | :--- | :--- |
@@ -271,37 +351,48 @@ geo-academic-reader/
 | `width` / `height` / `bytes` | Dimensions and size |
 | `is_body_figure` | Whether it looks like a body figure rather than page chrome |
 
----
+### 6.4 The QA engine
 
-## A classic paper is a citation network
+`scripts/note_check.py` is the piece that makes the guarantees enforceable rather than aspirational.
 
-A “classic-paper read” that only restates one PDF is a book report. Every note needs `## 0. 文献坐标` with a `年份 | 工作 | 核心贡献 | 与本文的关系` table, an explicit **competing explanations** paragraph and an explicit **later tests** paragraph.
-
-| `note_depth` | Minimum external works | Typical use |
+| Check | Severity | What it enforces |
 | :--- | :--- | :--- |
-| `brief` | 3 | One-page brief |
-| `standard` | 6 | Default single-paper note |
-| `deep` | 10 | Classic-paper deep read |
-| `note_type: 经典文献综述` | 15 | Multi-paper review |
+| `missing_image`, `broken_image` | error | Every referenced figure exists, is non-zero and has real image magic bytes |
+| `invalid_image_path` | error | Only `assets/<slug>/...` inside `papers/` — never `../assets/`, absolute paths, `file://` or `<img>` |
+| `placeholder_prose`, `hype_words` | error | No template residue and no unverifiable superlatives |
+| `unbalanced_display_math`, `github_alert_syntax` | error | `$$` pairs; blockquotes instead of `> [!NOTE]`, which VS Code renders literally |
+| `missing_related_context`, `missing_citation_table` | error | The 文献坐标 section and a ≥5-row citation table |
+| `thin_reference_context`, `no_external_references` | error | External-work minimums: brief 3, standard 6, deep 10, review 15 |
+| `references_without_doi`, `duplicate_reference_doi` | warning | Every external work needs a DOI; no duplicates |
+| `review_without_figures` | error | A review embeds at least 3 usable original figures |
+| `note_without_figures` | warning | A deep note embeds at least 3 |
 
-The anchor paper does not count as an external work. Only entries under `## 参考文献` count, and each external work should have a DOI. If the literature was not read, say which part is missing instead of padding the list.
+`--fix` rewrites only unambiguous things: legacy figure libraries are migrated into `papers/assets/`, links are rewritten, and alert markers become labelled blockquotes. It never rewrites your prose.
 
----
+### 6.5 Tests
 
-## Figures and VS Code preview
-
-VS Code's built-in Markdown preview only loads local images under the workspace folder (or, in a single-file window, under the note's own folder). The figure library therefore lives inside `papers/`:
-
-```markdown
-![Figure 1: caption](assets/<slug>/fig_01.png)
-*Figure 1: caption (source: browser; original: https://...)*
+```bash
+python3 -m unittest discover tests -v
 ```
 
-QA rejects `../assets/...`, `./assets/...`, absolute paths, `file://` and `<img>`. Callouts use labelled blockquotes such as `> **一句话结论**`, because VS Code does not render GitHub's `> [!NOTE]` syntax.
+Five suites cover the parsers, the QA engine, the preflight gate, the translation cache and the updater:
+
+```text
+tests/test_journal_watch.py   tests/test_note_check.py
+tests/test_preflight.py       tests/test_translate.py
+tests/test_updater.py
+```
+
+### 6.6 Extending it
+
+- **Add a journal**: add an entry to `.geo-reader/journals.json` — `key`, `name`, `parser`, `url` (or `url_template` + `volumes`), `enabled`. No code change unless the page layout is unusual.
+- **Add a parser**: implement it in `scripts/journal_watch.py` and register the name in the parser table.
+- **Add a QA rule**: extend `scripts/note_check.py` and add a case to `tests/test_note_check.py`. Rules are data, not prose: every issue has a code, a severity and a line.
+- **Change the version**: edit `scripts/version.py` only; `pyproject.toml` and `setup.py` mirror it, and a release check compares all three.
 
 ---
 
-## Troubleshooting
+## 7. Troubleshooting
 
 | Symptom | Cause | Fix |
 | :--- | :--- | :--- |
@@ -314,16 +405,17 @@ QA rejects `../assets/...`, `./assets/...`, absolute paths, `file://` and `<img>
 | Text < 800 chars | Abstract page or paywall | Inspect `fulltext.md`; use an OA PDF or `--url`; never write a full review from an abstract |
 | Image missing in preview | Path outside `papers/` | `--check-note --fix`; the valid form is `assets/<slug>/...` |
 | `thin_reference_context` | The note summarises one paper only | Add prehistory, rivals and later tests, or lower `note_depth` |
+| `review_without_figures` | The review has no original figures | Run `--doi` for the key works, embed `assets/<slug>/fig_XX.png`, add a `> **读图要点**` block per figure |
 | `--check-update` says offline | GitHub unreachable | Not an error; retry with `--refresh`, or set `GEO_READER_NO_UPDATE_CHECK=1` |
 | `--update` refuses | Dirty code tree or diverged history | Commit or `git stash`; never `reset --hard` |
 | Journal list is empty | Page disabled, parser drift, or advanced volumes | Check `enabled` / `url`; update EPSL `volumes`; fix the parser |
 | Chinese title shows “暂缺” | Translation rate limit or outage | Rerun `--new-literature`; cached titles are reused; never invent one |
 
-More: [rules/TROUBLESHOOTING.md](rules/TROUBLESHOOTING.md), [rules/JOURNALS.md](rules/JOURNALS.md), [LESSONS.md](LESSONS.md).
+More: [rules/TROUBLESHOOTING.md](rules/TROUBLESHOOTING.md), [rules/JOURNALS.md](rules/JOURNALS.md), [rules/MARKDOWN_SPEC.md](rules/MARKDOWN_SPEC.md), [LESSONS.md](LESSONS.md).
 
 ---
 
-## Diagnostics and cleanup
+## 8. Diagnostics and cleanup
 
 ```bash
 python3 main.py --preflight     # contract + environment + profile + role
@@ -340,6 +432,6 @@ Uninstalling never deletes `papers/`, `papers/assets/` or `.raw/`.
 
 ---
 
-## License
+## 9. License
 
 [MIT](LICENSE)

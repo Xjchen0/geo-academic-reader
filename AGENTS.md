@@ -1,4 +1,4 @@
-# AGENTS.md — geo-academic-reader v0.4.0-pre.1
+# AGENTS.md — geo-academic-reader v0.5.0
 
 > **Read this file before doing any literature task in this workspace.**
 > The workspace turns papers (DOI / URL / PDF) into a **raw evidence pack**, then the agent writes a **VS Code-ready literature note** from that evidence. The Python pipeline never writes review prose.
@@ -235,7 +235,32 @@ Counting and verification rules:
 - Duplicate DOIs, entries without a DOI, a missing reference section and a missing 文献坐标 section are reported by `--check-note`.
 - Do not pad the list with papers you did not read. Three well-understood rivals are worth more than ten decorative citations; if the count is below target, say what is missing instead of inventing entries.
 
-### 1.6 “找新文献” = 打开期刊官网，只列候选，等待选择（P0）
+### 1.6 图文并茂：综述与深读必须带原文图 (P0)
+
+A review that cites 15 works but shows no figure is a digest, not a review. The figure quota is enforced by `--check-note`, not by good intentions:
+
+| Note kind | Minimum embedded publisher figures | Check |
+| :--- | :--- | :--- |
+| `note_type` 含 `综述` / `review` | 3 | `review_without_figures` — **error** |
+| `note_depth: deep`（非综述） | 3 | `note_without_figures` — warning |
+| `note_depth: standard` | 1 | `note_without_figures` — warning |
+| `note_depth: brief` | 0 | — |
+
+How to satisfy it:
+
+1. Pick the 2–4 works whose figures carry the argument (the paleolatitude curve, the model comparison, the plate reconstruction). Run `--doi` on each so the evidence pack exists — the review cannot borrow a figure it never fetched.
+2. Copy the figure files from `papers/assets/<slug>/fig_XX.*` into the note as `![图 N：图注](assets/<slug>/fig_XX.png)`.
+3. Take the caption verbatim from `.raw/<slug>/figures/manifest.json`; never invent one.
+4. Add a `> **读图要点**` blockquote under each figure: axes, variables, controls, inflection points, and what the figure does **not** support.
+
+Rules that keep this honest:
+
+- Only figures with `origin: browser` (or `http`) are publisher originals. `origin: pdf` means a PDF crop — say so in the caption.
+- Never embed a cover image, a logo, a page-header icon or a “related article” thumbnail. The manifest marks those `is_body_figure: false`.
+- A broken or missing image link does **not** count towards the quota; the check counts files that resolve to a readable image.
+- If a work genuinely has no usable figure, say why in the prose. Do not pad with decorative images.
+
+### 1.7 “找新文献” = 打开期刊官网，只列候选，等待选择（P0）
 
 当用户说“找新文献”“最近有什么新文章”“推荐文献”“看看期刊新文章”时：
 
@@ -358,6 +383,7 @@ Required content:
 - Front matter: `title`, `journal`, `year`, `doi`, `source`, `raw`, `status`, `note_type`, `note_depth`, `reviewed_at`, `tags`. `note_depth` drives the reference target; set it to `brief`, `standard` or `deep` rather than leaving the placeholder.
 - One-sentence conclusion in a blockquote with a bold label, `> **一句话结论**`.
 - `## 0. 文献坐标` with a citation-network table (≥5 rows) plus **竞争解释** and **后续检验** paragraphs, per §1.5.
+- **Original figures, per §1.6.** A review needs at least 3 embedded publisher figures; a deep note at least 3. Each figure carries a verbatim manifest caption and a `> **读图要点**` block.
 - Research question and explicit hypotheses (or “作者未显式提出假说”).
 - Data, methods, boundary conditions, reproducibility.
 - Per-figure reading: axes, variables, controls, inflection points, what the figure supports/does not support.
@@ -459,6 +485,7 @@ For a review covering multiple papers, use `templates/literature_review.md`; eve
 - [ ] Note written from `templates/paper_note.md`; no placeholder prose.
 - [ ] Every key claim has an evidence anchor.
 - [ ] `## 0. 文献坐标` has a ≥5-row citation table plus 竞争解释 and 后续检验; external works meet the `note_depth` target.
+- [ ] 综述 / deep 笔记达到 §1.6 的配图下限，每张图有 manifest 图注与“读图要点”。
 - [ ] Every external work has a verified DOI, or is marked “自动构造，需核对”.
 - [ ] Every image uses `assets/<slug>/...` inside `papers/` and passes `--check-note`.
 - [ ] No GitHub alert syntax (`> [!NOTE]`) remains in the note.
