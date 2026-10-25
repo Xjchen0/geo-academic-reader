@@ -107,6 +107,16 @@ def print_guide(profile: Optional[dict] = None) -> None:
    以后每次任务都会沿用这份偏好；想修改时说：重新设置偏好。
    文献命令需要 24 小时内的 preflight 标记，过期后重跑 --preflight 即可。
 
+0b) 用哪个 Python（preflight 的 Env: 行会直接告诉你）
+   扫描顺序固定：uv -> conda -> venv -> 系统 Python。
+     uv     用 uv run python main.py …   准备：uv sync
+     conda  用 python main.py …          准备：python -m pip install -r requirements.txt
+     venv   用 python main.py …          准备：python -m venv .venv
+     裸环境 用 python3 main.py …         准备：python3 -m pip install -r requirements.txt
+   Windows 上 python/python3 若一律退出码 49，那是 Microsoft Store 占位符，
+   不是解释器；用 uv sync + uv run，或从 python.org 安装并勾选 Add Python to PATH。
+   全新 clone 不需要跑 install.sh / install.ps1：直接对 Agent 说“开始使用”即可。
+
 1) 找新文献（只列清单，等待你选择）
    python3 main.py --new-literature
    python3 main.py --new-literature --journal epsl --journal geology_early

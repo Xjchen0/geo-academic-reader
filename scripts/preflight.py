@@ -31,6 +31,7 @@ from .config import (
     load_profile,
     profile_exists,
 )
+from .environment import detect_environment
 from .version import __version__
 
 CONTRACT_DOCS = ("AGENTS.md", "MEMORY.md", "LESSONS.md")
@@ -130,6 +131,7 @@ def build_preflight() -> Dict[str, object]:
     env = _run_doctor()
     profile = load_profile() if profile_exists() else {}
     role = workspace_role()
+    environment = detect_environment()
 
     blockers = []
     missing_docs = [name for name, info in docs.items() if not info["exists"]]
@@ -148,13 +150,22 @@ def build_preflight() -> Dict[str, object]:
         blockers.append("环境自检没有返回结果")
 
     chrome = env.get("chrome", {}) if env else {}
+    recommended = environment.get("recommended", {}) or {}
     warnings = []
     store_aliases = (env.get("python", {}) or {}).get("store_alias_launchers") or []
     if store_aliases:
         warnings.append(
-            "PATH 上的 {} 是 Microsoft Store 占位符（退出码 49，无输出）；"
-            "改用 uv run python main.py ... 或从 python.org 安装 Python".format(
-                ", ".join(item.get("name", "?") for item in store_aliases)
+            "PATH 上的 {} 是 Microsoft Store 占位符（退出码 49，无输出）；改用 {}，"
+            "或从 python.org 安装 Python".format(
+                ", ".join(item.get("name", "?") for item in store_aliases),
+                recommended.get("run_command", "uv run python main.py ..."),
+            )
+        )
+    if recommended.get("setup_command") and environment.get("packages", {}).get("missing"):
+        warnings.append(
+            "当前环境缺少依赖（{}）；准备命令：{}".format(
+                ", ".join(environment["packages"]["missing"]),
+                recommended["setup_command"],
             )
         )
     return {
@@ -169,6 +180,12 @@ def build_preflight() -> Dict[str, object]:
             "python": env.get("python", {}),
             "packages": env.get("packages", {}),
             "optional_packages": env.get("optional_packages", {}),
+            "scanner": {
+                "order": environment.get("order", []),
+                "candidates": environment.get("candidates", []),
+                "active": environment.get("active", {}),
+                "recommended": recommended,
+            },
             "chrome": {
                 "executable": chrome.get("executable", ""),
                 "cdp_running": bool(chrome.get("cdp_running")),
@@ -261,6 +278,8 @@ def format_report(report: Dict[str, object]) -> str:
     profile = report.get("profile", {}) or {}
     workspace = report.get("workspace", {}) or {}
     docs = report.get("documents", {}) or {}
+    scanner = env.get("scanner", {}) or {}
+    recommended = scanner.get("recommended", {}) or {}
 
     lines = [
         "geo-academic-reader v{} | Preflight".format(report.get("version", "")),
@@ -274,6 +293,11 @@ def format_report(report: Dict[str, object]) -> str:
         "System    : {}".format(env.get("os", "unknown")),
         "Python    : {} {}".format(
             python.get("version", "?"), "OK" if python.get("ok") else "TOO OLD"
+        ),
+        "Env       : {}".format(
+            recommended.get("run_command", "?")
+            if recommended
+            else "unknown"
         ),
         "Packages  : {}".format(
             "OK" if not packages.get("missing") else "missing " + ", ".join(packages.get("missing", []))

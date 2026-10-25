@@ -150,6 +150,20 @@ If `--thematic-review` returns no verified entries, widen the query (`--from-yea
 
 ## Python environment
 
+The workspace scans the environments in a fixed order — **uv → conda → venv → plain Python** — and
+prints the one to use on the `Env:` line of `--preflight`. `doctor.py` shows the whole scan.
+Do not guess the interpreter; read that line and use its command verbatim.
+
+| Environment | Run with | Prepare with |
+|:---|:---|:---|
+| `uv` | `uv run python main.py …` | `uv sync` |
+| `conda` (activated) | `python main.py …` | `python -m pip install -r requirements.txt` |
+| `venv` (activated, or the project’s `.venv/`) | `python main.py …` | `python -m venv .venv` then `python -m pip install -r requirements.txt` |
+| plain Python on `PATH` | `python3 main.py …` (Windows: `python main.py …`) | `python3 -m pip install -r requirements.txt` |
+
+If the user is already inside a conda env or a venv and the dependencies import there, that
+environment wins — the agent uses `python main.py …` instead of building a second one.
+
 | Symptom | Likely cause | What to do |
 |:---|:---|:---|
 | `ModuleNotFoundError` | Dependencies not installed for the active interpreter | `python3 doctor.py --install`, or `pip install -r requirements.txt`. Check `sys.executable` in the doctor output. |
@@ -162,6 +176,9 @@ If `--thematic-review` returns no verified entries, widen the query (`--from-yea
 | CLI output arrives as mojibake (`֤�ݰ�…`) | The pipe was encoded with the locale code page (cp936) but decoded as UTF-8 | Fixed since 0.5.1: stdout/stderr are forced to UTF-8. On an older copy set `PYTHONIOENCODING=utf-8`. |
 | `uv sync` fails on `pyproject.toml` | An old `uv` that cannot read PEP 621 metadata | Upgrade `uv` (`uv self update`), or fall back to `python install.py`. |
 | `uv pip install` says "No virtual environment found" | `uv pip` targets an environment, not a project | Run `uv sync` instead; it creates `.venv/` and installs the project. |
+| `conda run -n base python main.py` fails | The `base` environment does not exist under that name | List them with `conda env list` and use a real name, or activate one first. |
+| `uv sync` refuses with "Project is already initialized" | `uv init` was run in an existing checkout | `uv init` is not the command here; `uv sync` is. `pyproject.toml` already exists, so `uv init` refuses by design. |
+| The user wants conda or venv, not uv | Their Python management, their choice | Both are supported. In an activated conda env or venv, run `python main.py …`; to create one, `python -m venv .venv` then `python -m pip install -r requirements.txt`. Do not force uv. |
 
 ---
 

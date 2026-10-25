@@ -26,6 +26,7 @@ from scripts.config import (
     profile_exists,
 )
 from scripts.console import FAIL, INFO, OK, WARN, configure_stdio, store_alias_launchers
+from scripts.environment import detect_environment, format_environment_report
 from scripts.version import __version__
 
 REQUIRED_PACKAGES = [
@@ -70,6 +71,11 @@ def _info(message):
 
 
 def detect_package_manager():
+    """Deprecated shim kept for the installer and older callers.
+
+    The ordered uv -> conda -> venv -> python scan now lives in
+    scripts/environment.py; this keeps the old flat summary working.
+    """
     in_conda = "CONDA_PREFIX" in os.environ
     in_venv = sys.prefix != sys.base_prefix
     return {
@@ -156,6 +162,7 @@ def _unmigrated_legacy_assets():
 
 def build_report(args):
     pm_info = detect_package_manager()
+    environment = detect_environment()
     installed, missing = check_packages(REQUIRED_PACKAGES)
     optional_installed, optional_missing = check_packages(OPTIONAL_PACKAGES)
     chrome_path = find_chrome()
@@ -176,6 +183,7 @@ def build_report(args):
             "ok": sys.version_info >= (3, 9),
             "store_alias_launchers": store_alias_launchers(),
         },
+        "environment": environment,
         "package_manager": pm_info,
         "packages": {"installed": installed, "missing": missing},
         "optional_packages": {"installed": optional_installed, "missing": optional_missing},
@@ -224,6 +232,21 @@ def print_report(report):
             alias["name"], alias["path"]
         ))
         _info("改用 uv run python main.py ...，或从 python.org 安装并勾选 Add Python to PATH。")
+
+    _print_header("Environment scan (uv -> conda -> venv -> system Python)")
+    environment = report.get("environment", {}) or {}
+    for candidate in environment.get("candidates", []):
+        mark = "available" if candidate.get("available") else "not found"
+        if candidate.get("active"):
+            mark += " / active"
+        _info("{:<8} {:<22} {}".format(
+            candidate.get("kind", "?"), mark, candidate.get("detail", "")
+        ).rstrip())
+    recommended = environment.get("recommended", {}) or {}
+    _ok("Recommended: {}".format(recommended.get("run_command", "?")))
+    _info("Why: {}".format(recommended.get("reason", "")))
+    if recommended.get("setup_command"):
+        _info("Prepare it with: {}".format(recommended["setup_command"]))
 
     _info("Environment: {}".format(report["package_manager"]["summary"]))
 
@@ -283,12 +306,15 @@ def print_report(report):
             _info("Legacy root assets/ remains as a copy; safe to delete after the preview is confirmed.")
 
     _print_header("Next Steps")
+    runner = (report.get("environment", {}).get("recommended", {}) or {}).get(
+        "run_command", "python3 main.py"
+    )
     print("  1. Open this folder in your agent and say: 开始使用")
-    print("  2. python3 main.py --preflight   # contract, environment, profile, role")
-    print("  3. python3 main.py --doi \"10.1038/s41467-026-69772-8\"")
+    print("  2. {} --preflight   # contract, environment, profile, role".format(runner))
+    print("  3. {} --doi \"10.1038/s41467-026-69772-8\"".format(runner))
     print("  4. Agent writes papers/<slug>.md from .raw/<slug>/")
-    print("  5. python3 main.py --check-note papers/<slug>.md --fix")
-    print("  6. python3 main.py --index papers/<slug>.md")
+    print("  5. {} --check-note papers/<slug>.md --fix".format(runner))
+    print("  6. {} --index papers/<slug>.md".format(runner))
     if report["packages"]["missing"] and not report["python"]["ok"]:
         print("\n{}Diagnostic completed with blocking issues.{}".format(RED, RESET))
     else:

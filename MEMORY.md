@@ -35,6 +35,17 @@
 6. 标记只能证明“检查跑过”，不能证明“文档读过”。不要把标记当成读过 `AGENTS.md` 的借口；
    也不要为了通过检查而伪造 `preflight.json`。
 
+## 2b. 解释器由扫描决定（P0）
+
+- 固定顺序：**uv → conda → venv → 裸 Python**。`--preflight` 的 `Env:` 行给出结论，
+  `doctor.py` 打印完整扫描。Agent **不猜**解释器，用那一行的命令。
+- 用户已经激活 conda 环境或 venv、且依赖在那里能 import 时，就用那个环境
+  （`python main.py …`），不要另建一套环境，也不要强迫用户改用 uv。
+- Windows 的 `python`/`python3` 退出码 49 是 Microsoft Store 占位符，不是解释器。
+- **全新 clone 就是完整安装**：不要求用户先跑 `install.sh` / `install.ps1` / `install.py`。
+  装环境这件事由 Agent 在对话里做（`uv sync` 属于项目自身准备，不是替用户装额外包）。
+  脚本安装器只作为“喜欢用脚本的人”的可选路径。
+
 ## 3. 证据与解释分离（P0）
 
 - 脚本只产出 `.raw/<slug>/`（`paper.json`、`fulltext.md`、`figures/manifest.json`）与图片；

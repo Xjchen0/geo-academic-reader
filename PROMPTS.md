@@ -15,10 +15,12 @@
 1. 先读 AGENTS.md、MEMORY.md、LESSONS.md，不要只看 --help。
 2. 运行 python3 main.py --preflight，把操作系统、Python、依赖包、Chrome/CDP、编辑器和
    工作区角色（代码仓库还是测试工作区）告诉我；缺少的依赖给出确切安装命令，先问我再装。
-3. 按 AGENTS.md 第 0 节问我的偏好，保存到 .geo-reader/profile.json，然后重跑 --preflight。
-4. 用几行说明 papers/、.raw/、.geo-reader/、templates/、journals.json 各自做什么，
+3. 按 preflight 的 Env: 行确定用哪个解释器（顺序是 uv -> conda -> venv -> 系统 Python），
+   把它原样告诉我，并用它执行后续所有命令；需要准备环境时由你来做，不要让我先跑安装脚本。
+4. 按 AGENTS.md 第 0 节问我的偏好，保存到 .geo-reader/profile.json，然后重跑 --preflight。
+5. 用几行说明 papers/、.raw/、.geo-reader/、templates/、journals.json 各自做什么，
    再给我一个可选的第一次练习（找新文献 / 精读一篇 / 先看看目录）。
-不要让我运行 --setup 之类的设置命令。
+不要让我运行 --setup 之类的设置命令，也不要让我先跑 install.sh / install.ps1。
 ```
 
 如果跳过引导、直接给论文，Agent 也必须先完成引导：
@@ -285,9 +287,12 @@ python3 main.py --new-literature --no-translate
 - 交付前必须运行 --check-note --fix，再运行 --index。
 - 任务结束后运行一次 --check-update（缓存 6 小时）；离线失败不算任务失败。发现新版本只提示，不擅自升级。
 - 如果正文少于 800 字符、图片为 0、或浏览器被人机验证拦截，先报告，不要硬写。
-- 解释器：默认 `python3 main.py …`；如果工作区由 uv 管理，改用 `uv run python main.py …`。
-  Windows 上 `python`/`python3` 若一律退出码 49，那是 Microsoft Store 占位符，先跑一次 `uv sync`，
+- 解释器：不要猜。看 preflight 的 `Env:` 行，顺序是 uv -> conda -> venv -> 系统 Python，
+  那一行写什么命令就用什么命令。Windows 上 `python`/`python3` 若一律退出码 49，
+  那是 Microsoft Store 占位符，先跑一次 `uv sync` 再用 `uv run python main.py …`，
   不要把它当成项目缺陷；也不要在已有仓库里跑 `uv init`（pyproject.toml 已存在）。
+  用户已经激活了 conda 环境或 venv 时，就用那个环境里的 `python main.py …`，
+  不要强迫他改用 uv。
 ```
 
 ---

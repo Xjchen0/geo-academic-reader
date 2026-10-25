@@ -5,12 +5,12 @@
 import argparse
 import os
 import platform
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 from scripts.console import FAIL, OK, configure_stdio
+from scripts.environment import detect_environment
 from scripts.version import __version__
 
 
@@ -55,22 +55,28 @@ def main(argv=None):
     print("System: {} {} ({})".format(platform.system(), platform.release(), platform.machine()))
     print("Python: {} ({})\n".format(sys.version.split()[0], sys.executable))
 
-    has_uv = bool(shutil.which("uv"))
-    print("[*] Detecting Python environment...")
-    if "CONDA_PREFIX" in os.environ:
-        print("    Active Conda environment: {}".format(os.environ.get("CONDA_DEFAULT_ENV", "unknown")))
-    elif sys.prefix != sys.base_prefix:
-        print("    Active virtual environment (venv) detected.")
-    elif has_uv:
-        print("    Fast package manager 'uv' detected.")
-    else:
-        print("    System / Global Python detected.")
+    # The same ordered scan the agent uses in conversation: uv -> conda ->
+    # venv -> plain Python. Installing into the environment the user already
+    # has is friendlier than building a second one.
+    environment = detect_environment()
+    recommended = environment.get("recommended", {}) or {}
+    kind = recommended.get("kind", "python")
+    print("[*] Environment scan (uv -> conda -> venv -> system Python):")
+    for candidate in environment.get("candidates", []):
+        mark = "available" if candidate.get("available") else "not found"
+        if candidate.get("active"):
+            mark += " / active"
+        print("    - {:<8} {:<20} {}".format(
+            candidate.get("kind", "?"), mark, candidate.get("detail", "")
+        ).rstrip())
+    print("    Using: {} ({})".format(kind, recommended.get("reason", "")))
+    print()
 
     requirements = package_dir / "requirements.txt"
     pyproject = package_dir / "pyproject.toml"
     used_uv = False
 
-    if has_uv and pyproject.exists():
+    if kind == "uv" and pyproject.exists():
         # uv owns the project environment: it creates .venv/, resolves the
         # dependencies declared in pyproject.toml and installs the package
         # itself, so `uv run python main.py ...` works out of the box.
@@ -114,7 +120,11 @@ def main(argv=None):
         doctor_python = ["uv", "run", "python"] if used_uv else [sys.executable]
         subprocess.run(doctor_python + [str(package_dir / "doctor.py")])
 
-    runner = "uv run python main.py" if used_uv else "python3 main.py"
+    runner = "uv run python main.py" if used_uv else recommended.get(
+        "run_command", "python3 main.py"
+    )
+    if used_uv:
+        runner = "uv run python main.py"
     print("\nInstallation complete. Next steps:")
     print("  1. Open this folder in your agent and say: 开始使用 (or Start)")
     print("  2. {} --doi \"10.1038/s41467-026-69772-8\"".format(runner))

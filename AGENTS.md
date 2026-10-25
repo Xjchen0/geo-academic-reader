@@ -21,20 +21,43 @@ Every session, before any command that touches literature:
 
 The marker proves the check ran; it does not prove you read the documents. Never fabricate `preflight.json`, claim a read you did not do, or present a blocked command as a success.
 
+**A fresh clone is a complete setup.** There is no installer to run first: `git clone`, open the
+folder in the agent, say `开始使用`, and the agent scans the environment, prepares it if needed,
+onboards the user and starts working. `install.py` / `install.sh` / `install.ps1` exist for people
+who prefer a script, but pointing a new user at them is a step backwards — do the setup in
+conversation instead.
+
 ```bash
 python3 main.py --preflight          # human checklist
 python3 main.py --preflight --json   # same report, machine-readable
 ```
 
-**Which interpreter?** Use whatever runs the project in this workspace:
+**Which interpreter?** The workspace scans the environments in a fixed order and prints the
+result on the `Env:` line of `--preflight` (and in a full block in `doctor.py`):
 
-| Situation | Command |
-| :--- | :--- |
-| Plain install | `python3 main.py …` (Windows: `python main.py …`) |
-| The project owns a `uv` environment | `uv run python main.py …` |
-| Every `python` / `python3` exits with code 49 | The Microsoft Store alias stub is on `PATH` and there is no real Python. Run `uv sync` once, then use `uv run python main.py …` |
+| Order | Environment | How to run | How to prepare it |
+| :--- | :--- | :--- | :--- |
+| 1 | **uv** (owns the project) | `uv run python main.py …` | `uv sync` |
+| 2 | **conda** (active env) | `python main.py …` | `python -m pip install -r requirements.txt` |
+| 3 | **venv / virtualenv** (active or project-local) | `python main.py …` | `python -m venv .venv` then `python -m pip install -r requirements.txt` |
+| 4 | **plain Python** on `PATH` | `python3 main.py …` (Windows: `python main.py …`) | `python3 -m pip install -r requirements.txt` |
 
-Do not run `uv init` in an existing checkout — `uv sync` is enough, and `uv init` refuses because `pyproject.toml` already exists.
+Rules for the agent:
+
+- **Never guess the interpreter.** Read the `Env:` line from `--preflight` and use exactly that command.
+- If the `Env:` line names `uv`, run `uv sync` once and then use `uv run python main.py …` for
+  everything — do not mix `uv run` with a bare `python`.
+- If the user is already inside a conda env or a venv **and** the dependencies import there, use
+  that environment (`python main.py …`); do not build a second one.
+- `install.py` / `install.sh` / `install.ps1` are **optional conveniences**, not a required step.
+  A fresh clone plus "开始使用" in the agent chat is a complete setup: the agent scans, prepares
+  the environment, onboards the user and starts working. Never tell a user to run an installer
+  when the agent can do it in conversation.
+- On Windows, `python` / `python3` on `PATH` may be the Microsoft Store alias stub (exit code 49,
+  no output). That is not a Python: use `uv sync` + `uv run`, or a python.org install with
+  **Add Python to PATH**. `doctor.py` names the stub explicitly.
+- Do not run `uv init` in an existing checkout — `uv sync` is enough, and `uv init` refuses because
+  `pyproject.toml` already exists.
 
 ### 0.1 Check for a profile
 
@@ -53,6 +76,10 @@ python3 main.py --profile --json
 `--preflight` is a conversation starter, not a silent gate. Report these in the user's language, then ask one compact confirmation:
 
 - **OS and Python**: if Python is below 3.9, stop and give the upgrade path instead of continuing.
+- **Environment**: the `Env:` line of `--preflight` names the environment to use (`uv` / `conda` /
+  `venv` / plain Python) and the exact command. Say it in the user's language and use that command
+  for every later invocation. If it needs preparing (for example `uv sync`), do that now — it is
+  part of the project setup, not an extra package you install on the user's behalf.
 - **Packages**: `requests`, `beautifulsoup4`, `pypdf`, `websockets` are required; `pymupdf` is optional. Give the exact `pip install` line for anything missing and ask before running it.
 - **Browser**: Chrome/Chromium/Edge found or not, and whether CDP 9222 is already listening. If no browser is found, ask whether to install one or accept HTTP/PDF figures with lower-quality images.
 - **Editor**: the profile's editor and whether `.vscode/settings.json` exists.
@@ -550,7 +577,8 @@ For a review covering multiple papers, use `templates/literature_review.md`; eve
 ## 7. Completion checklist
 
 - [ ] Read `AGENTS.md`, `MEMORY.md`, `LESSONS.md`; a fresh `--preflight` marker exists (≤24 h, same version, profile present).
-- [ ] Environment reported to the user (OS, Python, packages, browser, editor) and any blocker or degradation stated.
+- [ ] Environment reported to the user (OS, Python, **the `Env:` command from the scan**, packages, browser, editor) and any blocker or degradation stated.
+- [ ] Every later command uses the interpreter the scan recommended, not a guessed one.
 - [ ] Workspace role stated: `code repository` ships no notes/packs; `test workspace` keeps them locally.
 - [ ] Profile exists (or onboarding completed in this conversation and saved, then `--preflight` rerun).
 - [ ] “找新文献”只打开了 `journals.json` / `.geo-reader/journals.json` 里的期刊页面，没有按对话主题自选文献。
@@ -582,6 +610,10 @@ For a review covering multiple papers, use `templates/literature_review.md`; eve
 | `--preflight` reports missing docs | Restore `AGENTS.md` / `MEMORY.md` / `LESSONS.md` from the release; never write empty placeholders |
 | `--preflight` reports missing packages | Give the `pip install` line and ask before installing; do not start extraction |
 | Every `python` / `python3` exits with code 49 | The Microsoft Store alias stub is on `PATH`; there is no real Python. Run `uv sync`, then `uv run python main.py …`. Never treat the bare exit 49 as a project bug |
+| `--preflight` shows `Env: uv run python main.py` but the user has no `uv` | The scan found the `uv` launcher but the command still fails. Fall back to the next candidate the scan listed (`conda` / `venv` / plain Python) and say why |
+| The user asks for conda or venv instead of uv | Both are supported. In an activated conda env or venv, run `python main.py …`; to create one: `python -m venv .venv` then `python -m pip install -r requirements.txt`. Do not force uv on a user who manages Python another way |
+| `conda run -n base python main.py` fails | The base env may not exist. List envs with `conda env list` and use a real name, or activate one first |
+| A `uv sync` in an existing checkout fails | `uv init` was run instead. `uv sync` is the correct command; `uv init` refuses because `pyproject.toml` already exists |
 | CLI output is mojibake on Windows | The pipe was encoded as cp936. Fixed since 0.5.1 (stdout is forced to UTF-8); on an older copy set `PYTHONIOENCODING=utf-8` |
 | A paper/note folder mixes code and data | Check the role line; notes, assets, packs and PDFs are git-ignored in a code repository |
 | “找新文献”没有先给清单 | 运行 `python3 main.py --new-literature`；不要改用主题搜索或从笔记推断 |

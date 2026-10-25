@@ -44,28 +44,48 @@ Open the workspace in an agent (VS Code, Cursor, Claude Code, Antigravity, Winds
 
 The agent follows `AGENTS.md` §0: it reads the contract documents, runs `--preflight`, confirms the environment with you, asks about language, editor, instruction style, browser policy, note depth, citation format, and the journal list for “find new papers”, writes `.geo-reader/profile.json`, reruns `--preflight`, and gives a short tour of the tree. **There is no setup command and no wizard.** No `.geo-reader/` directory is created until that conversation happens, so a fresh clone carries no usage trace. Preferences persist across sessions; say `重新设置偏好` to change them.
 
+**A fresh clone is the whole setup.** The agent prepares the Python environment in conversation —
+it does not ask the user to run `install.sh` / `install.ps1` / `install.py` first. Those scripts
+remain available for people who prefer them.
+
 Load the skill only after the profile exists. If the profile is missing, onboarding comes first, even when the first message already contains a DOI.
+
+---
+
+## 🐍 Which Python? The scan
+
+`--preflight` scans the environments in a fixed order and prints the one to use on its `Env:` line:
+
+| Order | Environment | Run with | Prepare with |
+| :--- | :--- | :--- | :--- |
+| 1 | `uv` | `uv run python main.py …` | `uv sync` |
+| 2 | `conda` (active) | `python main.py …` | `python -m pip install -r requirements.txt` |
+| 3 | `venv` (active or project-local) | `python main.py …` | `python -m venv .venv` |
+| 4 | plain Python | `python3 main.py …` (Windows: `python main.py …`) | `python3 -m pip install -r requirements.txt` |
+
+Use the command from the `Env:` line verbatim for every later invocation. `doctor.py` prints the
+full scan. A `python` that exits with code 49 is the Microsoft Store alias stub, not an
+interpreter.
 
 ---
 
 ## ⚡ Quick Start
 
 ```bash
-# 1. Install dependencies (once)
-./install.sh                 # Windows: .\install.ps1
-uv sync                      # if you use uv: creates .venv/ and installs the project
-python3 main.py --preflight  # contract docs, environment, profile, workspace role
-python3 doctor.py            # optional verbose diagnostics
+# 0. A fresh clone is enough — the agent does this step in conversation.
+#    The scan below prints the exact command to use.
+python3 main.py --preflight        # contract docs, environment (Env: line), profile, role
+python3 doctor.py                  # optional verbose diagnostics, full environment scan
 
-# Use `uv run python main.py ...` instead of `python3 main.py ...` when the
-# project owns a uv environment (every `python` on PATH exits with code 49 on
-# a fresh Windows install — that is the Microsoft Store alias stub).
+# 1. Prepare the environment the scan recommended
+uv sync                            # only when the scan says uv
 
 # 2. Extract an evidence pack
 python3 main.py --doi "10.1038/s41467-026-69772-8"
 python3 main.py --url "https://www.nature.com/articles/s41467-026-69772-8"
 python3 main.py --pdf "input_pdfs/paper.pdf"
 python3 main.py --batch-pdfs
+python3 main.py --thematic-review "<topic>" --anchor-doi "10.xxxx/yyyy"
 
 # 3. The agent writes papers/<slug>.md from .raw/<slug>/ using templates/paper_note.md
 

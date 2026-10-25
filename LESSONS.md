@@ -139,3 +139,11 @@ Observations from running this workspace on real papers. The theme is the same t
 - Evidence tiers are what keep a review honest: 【直证】direct from the source, 【转述】second-hand, 【推断】inference, 【评估】the writer's assessment, 【未核实】unverified. A review that does not label its claims is a review that quietly mixes a paper's finding with the writer's guess.
 - The human fact-check sheet is not paperwork. Automation can confirm that a DOI resolves to a title; only a person can confirm that the title, the year, the figure and the sentence in the note are the ones the paper actually says. Generate the sheet so the checking is a checklist, not a blank page.
 - “系统综述” is a claim about method. Without a recorded search string, database, date window and inclusion/exclusion rules, the phrase is a promise the note cannot keep.
+
+## [tags: environment, onboarding, python, windows] A Fresh Clone Is the Install
+
+- A second Windows test run cloned the repository, said `开始使用`, and got a working session with **no installer at all**: the agent read the contract, found `python` exiting with code 49, located `uv`, ran `uv sync`, onboarded the user, extracted a paper and delivered a note that passed QA. The install scripts were never needed.
+- That is the real product surface. A script that asks the user to run something before the agent can work is a step *backwards* from an agent that can just do it. The scripts stay as a convenience for people who prefer them; the contract should never require them.
+- The environment question generalises: `uv` is one answer, not the answer. The workspace now scans **uv → conda → venv → plain Python** and prints the winner on the `Env:` line of `--preflight`. An agent that hard-codes `uv run` breaks a user who manages Python with conda; an agent that guesses breaks everyone.
+- Prefer the environment the user is already in. If a conda env or a venv is activated and the dependencies import there, `python main.py …` is the right command — building a second environment on top of a working one is busywork the user did not ask for.
+- The scan must never install anything by itself. It reports a command (`uv sync`, `python -m pip install -r requirements.txt`); the agent decides whether to run it. A detector that also mutates the machine is a setup wizard wearing a detector's clothes.
