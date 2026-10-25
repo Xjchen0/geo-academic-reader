@@ -212,8 +212,11 @@ python3 main.py --new-literature --no-translate
 1. 运行：
    python3 main.py --thematic-review "<主题>" --anchor-doi "<DOI>"
    （需要时加 --refs "doi1,doi2"、--from-year/--to-year、--max-refs）
+   知道要引哪一篇时用 --refs "doi|预期标题"（一行一条，可写进文件）；
    读 .raw/reviews/<slug>/candidates.md 与 references.json；
    “待核验”条目只能标【未核实】，不要直接写进笔记。
+   核验失败分三类：not_found（DOI 不存在）、temporarily_unavailable（接口暂时不可用，重跑即可）、
+   title_mismatch（解析到的是另一篇论文）。任何一种都不许用“看起来对”的 DOI 顶替。
 2. 人工过一遍 .raw/reviews/<slug>/factcheck.md：逐条核对标题/作者/年份/期刊。
 3. 按 templates/thematic_review.md 写 papers/<slug>.md，必须包含：
    - 锚定论文（front matter 写 anchor_doi，且它本身要出现在参考文献表里）；
@@ -287,6 +290,12 @@ python3 main.py --new-literature --no-translate
 - 主题综述走 `--thematic-review`（Crossref 核验）路线，不要拿期刊扫描清单冒充主题检索；
   锚定论文要声明且在参考文献表内，竞争解释 ≥2，后续检验写不出就写“检索未覆盖”。
 - 主题综述的关键论断必须标证据层级：【直证】/【转述】/【推断】/【评估】/【未核实】，至少三层。
+- **能解析不等于核验通过**：一个编造的 DOI 可能指向另一篇真实文献（现场就有过，
+  DOI 能打开、年份也对，只有标题不对）。知道要引哪一篇时，用 `--refs "doi|预期标题"`
+  （一行一条，可写进文件），脚本会比对标题；不匹配的条目不会进参考文献表。
+  核验失败分三类，不要混：`not_found`（DOI 不存在，重试无用）、
+  `temporarily_unavailable`（限流/网络，重跑即可）、`title_mismatch`（指向别的文献，
+  必须换 DOI 或改引用对象）。任何一种都不许用猜测的 DOI 顶替。
 - 引用表至少 5 行，必须写竞争解释与后续检验；不要只列支持本文的工作。
 - 不要用 > [!NOTE] 这类 GitHub 告警语法，VS Code 不渲染它；用 > **一句话结论** 加引用块。
 - 交付前必须运行 --check-note --fix，再运行 --index。

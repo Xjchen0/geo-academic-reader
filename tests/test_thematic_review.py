@@ -78,6 +78,111 @@ GOOD_BODY = """## 1. 锚定论文
 """
 
 
+class TitleMatchTests(unittest.TestCase):
+    """A DOI that resolves is not necessarily the DOI you meant.
+
+    A hallucinated reference was caught in the field because the DOI
+    resolved to a real conference abstract on a related topic, while the
+    note credited it to a different paper. Only the title gives it away.
+    """
+
+    def test_identical_titles_match(self):
+        self.assertTrue(tr.titles_match("The stability of grounding lines",
+                                         "The stability of grounding lines"))
+
+    def test_punctuation_and_dashes_do_not_break_the_match(self):
+        self.assertTrue(
+            tr.titles_match("core-mantle boundary", "core–mantle boundary")
+        )
+
+    def test_a_subtitle_still_matches(self):
+        self.assertTrue(
+            tr.titles_match(
+                "Marine-based ice sheets and sea-level rise",
+                "Marine-based ice sheets and sea-level rise",
+            )
+        )
+
+    def test_a_different_paper_does_not_match(self):
+        self.assertFalse(
+            tr.titles_match(
+                "Marine-based ice sheets and sea-level rise",
+                "Hysteresis of the Antarctic ice sheet with a coupled climate-ice-sheet model",
+            )
+        )
+
+    def test_an_empty_expectation_never_fails(self):
+        self.assertTrue(tr.titles_match("", "Anything at all"))
+
+
+class RefSpecTests(unittest.TestCase):
+    def test_a_plain_doi_list_still_parses(self):
+        self.assertEqual(
+            tr.parse_ref_specs("10.1000/a, 10.1000/b"),
+            [("10.1000/a", ""), ("10.1000/b", "")],
+        )
+
+    def test_a_titled_entry_keeps_its_title(self):
+        found = tr.parse_ref_specs("10.1000/a|The stability of grounding lines")
+        self.assertEqual(found, [("10.1000/a", "The stability of grounding lines")])
+
+    def test_one_titled_entry_per_line(self):
+        text = (
+            "10.1000/a|First paper, with a comma\n"
+            "10.1000/b|Second paper\n"
+        )
+        found = tr.parse_ref_specs(text)
+        self.assertEqual(found[0], ("10.1000/a", "First paper, with a comma"))
+        self.assertEqual(found[1], ("10.1000/b", "Second paper"))
+
+    def test_an_ambiguous_titled_line_drops_the_title_instead_of_guessing(self):
+        found = tr.parse_ref_specs("10.1000/a 10.1000/b|Only one title")
+        self.assertEqual(len(found), 2)
+        self.assertTrue(all(title == "" for _doi, title in found))
+
+    def test_a_file_of_references_is_read(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "refs.txt"
+            path.write_text(
+                "10.1000/a|First paper\n10.1000/b\n", encoding="utf-8"
+            )
+            found = tr.parse_ref_specs(str(path))
+            self.assertEqual(found[0], ("10.1000/a", "First paper"))
+            self.assertEqual(found[1], ("10.1000/b", ""))
+
+
+class VerifyTitleTests(unittest.TestCase):
+    def _verify(self, metadata, expected=""):
+        with mock.patch.object(tr, "fetch_crossref_metadata", return_value=metadata):
+            return tr.verify_doi("10.1000/a", expected_title=expected)
+
+    def test_a_matching_title_stays_verified(self):
+        entry = self._verify(
+            {"doi": "10.1000/a", "title": "The stability of grounding lines",
+             "abstract": "", "error": ""},
+            expected="The stability of grounding lines",
+        )
+        self.assertTrue(entry["verified"])
+        self.assertTrue(entry["title_match"])
+        self.assertEqual(entry["status"], "verified")
+
+    def test_a_mismatching_title_is_rejected(self):
+        entry = self._verify(
+            {"doi": "10.1000/a", "title": "Hysteresis of the Antarctic ice sheet",
+             "abstract": "", "error": ""},
+            expected="Marine-based ice sheets and sea-level rise",
+        )
+        self.assertFalse(entry["verified"])
+        self.assertFalse(entry["title_match"])
+        self.assertEqual(entry["status"], "title_mismatch")
+        self.assertIn("标题不匹配", entry["error"])
+
+    def test_no_expectation_means_no_title_check(self):
+        entry = self._verify({"doi": "10.1000/a", "title": "Any title", "error": ""})
+        self.assertTrue(entry["verified"])
+        self.assertIsNone(entry["title_match"])
+
+
 class DoiHelpersTests(unittest.TestCase):
     def test_normalise_doi_strips_prefix_and_trailing_punctuation(self):
         self.assertEqual(
@@ -143,6 +248,27 @@ class VerifyTests(unittest.TestCase):
         self.assertFalse(entry["verified"])
         self.assertEqual(entry["default_tier"], "unverified")
 
+    def test_a_missing_doi_is_reported_as_not_found(self):
+        entry = self._verify(
+            {"doi": "10.1000/a", "error": "404 Not Found", "error_kind": "not_found"}
+        )
+        self.assertFalse(entry["verified"])
+        self.assertEqual(entry["status"], "not_found")
+
+    def test_a_rate_limited_lookup_is_reported_as_retryable(self):
+        entry = self._verify(
+            {"doi": "10.1000/a", "error": "HTTP 429", "error_kind": "rate_limited"}
+        )
+        self.assertFalse(entry["verified"])
+        self.assertEqual(entry["status"], "temporarily_unavailable")
+
+    def test_a_record_without_a_title_is_not_counted_as_verified(self):
+        entry = self._verify(
+            {"doi": "10.1000/a", "error": "Crossref 未提供标题", "error_kind": "incomplete"}
+        )
+        self.assertFalse(entry["verified"])
+        self.assertEqual(entry["status"], "incomplete")
+
 
 class WorkingSetTests(unittest.TestCase):
     def _build(self, **kwargs):
@@ -184,7 +310,7 @@ class WorkingSetTests(unittest.TestCase):
         with mock.patch.object(tr, "search_crossref_topic", return_value=search), \
                 mock.patch.object(tr, "fetch_reference_dois", return_value=predecessors), \
                 mock.patch.object(tr, "fetch_forward_citations", return_value=forward), \
-                mock.patch.object(tr, "verify_doi", side_effect=lambda doi, mailto="": dict(
+                mock.patch.object(tr, "verify_doi", side_effect=lambda doi, mailto="", expected_title="": dict(
                     verified[doi], roles=[])):
             return tr.build_working_set(**kwargs)
 
@@ -278,6 +404,26 @@ class ReportTests(unittest.TestCase):
         text = tr.render_console(self._payload())
         self.assertIn("主题综述", text)
         self.assertIn("不是期刊页面扫描", text)
+
+    def test_unverified_entries_show_why_they_failed(self):
+        payload = self._payload()
+        payload["candidates"][0].update(
+            {"status": "not_found", "error": "404 Not Found", "error_kind": "not_found"}
+        )
+        text = tr.render_candidates_md(payload)
+        self.assertIn("未核验原因", text)
+        self.assertIn("DOI 不存在", text)
+
+    def test_the_factcheck_sheet_lists_the_unverified_entries(self):
+        payload = self._payload()
+        payload["candidates"][0].update(
+            {"status": "temporarily_unavailable", "error": "HTTP 429",
+             "error_kind": "rate_limited"}
+        )
+        text = tr.render_factcheck_md(payload)
+        self.assertIn("未能核验的条目", text)
+        self.assertIn("10.1000/cand", text)
+        self.assertIn("接口暂时不可用", text)
 
 
 class CliTests(unittest.TestCase):

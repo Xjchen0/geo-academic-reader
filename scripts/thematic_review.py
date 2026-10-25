@@ -23,17 +23,15 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 from urllib.parse import quote, urlencode
 
-import requests
-
 from .config import (
     CROSSREF_API_URL,
-    DEFAULT_HEADERS,
     OPENALEX_API_URL,
     RAW_DIR,
     now_iso,
     slugify,
 )
 from .fetch_paper import clean_jats, fetch_crossref_metadata
+from .http_json import build_headers, request_json
 
 REVIEW_ROOT = RAW_DIR / "reviews"
 OPENALEX_WORKS_URL = "https://api.openalex.org/works"
@@ -81,27 +79,35 @@ MAX_FORWARD_CANDIDATES = 40
 # ---------------------------------------------------------------------------
 
 def _headers(mailto: str = "") -> Dict[str, str]:
-    headers = dict(DEFAULT_HEADERS)
-    headers["Accept"] = "application/json"
-    if mailto:
-        headers["From"] = mailto
-    return headers
+    return build_headers(mailto, accept="application/json")
 
 
 def _request_json(url: str, params: Optional[dict] = None, mailto: str = "") -> dict:
-    """GET a JSON endpoint. Returns {"error": ...} instead of raising."""
-    query = dict(params or {})
-    if mailto and "mailto" not in query:
-        query["mailto"] = mailto
-    try:
-        response = requests.get(
-            url, params=query, headers=_headers(mailto), timeout=25
-        )
-        if response.status_code >= 400:
-            return {"error": "HTTP {}".format(response.status_code)}
-        return response.json()
-    except Exception as exc:
-        return {"error": str(exc)}
+    """GET a JSON endpoint. Returns the payload, or ``{"error": ...}``.
+
+    The patient client in ``http_json`` handles the two failure modes that
+    produced wrong DOIs in the field: a rate-limited or non-JSON response
+    used to arrive as a decoder traceback, and the next thing that happened
+    was a DOI nobody had resolved. Now the failure is classified
+    (``not_found`` / ``rate_limited`` / ``server_error`` / ``network`` /
+    ``bad_json``) and reported as such.
+    """
+    result = request_json(
+        url,
+        params=params,
+        headers=_headers(mailto),
+        timeout=25,
+        mailto=mailto,
+    )
+    if result.get("ok"):
+        return result.get("data") or {}
+    payload = {
+        "error": result.get("error", "请求失败"),
+        "error_kind": result.get("kind", "other"),
+        "http_status": result.get("status", 0),
+        "attempts": result.get("attempts", 0),
+    }
+    return payload
 
 
 def normalise_doi(value: str) -> str:
@@ -129,6 +135,65 @@ def _entry_authors(authors) -> List[str]:
         if name:
             names.append(name)
     return names
+
+
+# ---------------------------------------------------------------------------
+# Title comparison
+# ---------------------------------------------------------------------------
+#
+# A DOI that resolves is not the same as the DOI you meant. In the field, a
+# hallucinated reference was caught out because "10.5194/egusphere-egu25-12628"
+# resolved to a conference abstract on a related topic, while the note
+# credited it to a different paper from a different year. Both DOIs are
+# real; only the title tells them apart.
+#
+# So verification compares the resolved title with the title the note is
+# about to claim, and a mismatch keeps the entry out of the reference list.
+
+TITLE_MATCH_THRESHOLD = 0.6
+
+_TITLE_STOPWORDS = {
+    "a", "an", "the", "of", "on", "in", "for", "and", "or", "to", "with",
+    "from", "by", "at", "as", "is", "are", "was", "were", "its", "their",
+}
+
+
+def normalise_title(text: str) -> str:
+    """Lowercase, strip accents and punctuation, collapse whitespace."""
+    value = str(text or "").strip().lower()
+    value = re.sub(r"<[^>]+>", " ", value)
+    value = re.sub(r"[^\w\s]", " ", value, flags=re.UNICODE)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def title_similarity(left: str, right: str) -> float:
+    """0..1 similarity of two titles, token overlap with a substring bonus."""
+    a = normalise_title(left)
+    b = normalise_title(right)
+    if not a or not b:
+        return 0.0
+    if a == b:
+        return 1.0
+    tokens_a = {token for token in a.split() if token not in _TITLE_STOPWORDS}
+    tokens_b = {token for token in b.split() if token not in _TITLE_STOPWORDS}
+    if not tokens_a or not tokens_b:
+        tokens_a = set(a.split())
+        tokens_b = set(b.split())
+    if not tokens_a or not tokens_b:
+        return 0.0
+    shared = tokens_a & tokens_b
+    overlap = len(shared) / float(max(len(tokens_a), len(tokens_b)))
+    if a in b or b in a:
+        # One title inside the other: subtitles and punctuation differences.
+        return max(overlap, 0.9)
+    return overlap
+
+
+def titles_match(expected: str, actual: str) -> bool:
+    """True when the resolved title is close enough to the expected one."""
+    if not str(expected or "").strip():
+        return True
+    return title_similarity(expected, actual) >= TITLE_MATCH_THRESHOLD
 
 
 # ---------------------------------------------------------------------------
@@ -297,20 +362,77 @@ def fetch_forward_citations(doi: str, limit: int = 20, mailto: str = "") -> List
 # Stage 2b - per-item verification against Crossref
 # ---------------------------------------------------------------------------
 
-def verify_doi(doi: str, mailto: str = "") -> dict:
-    """Verify one DOI against Crossref: title, authors, year, journal, abstract."""
+def verify_doi(doi: str, mailto: str = "", expected_title: str = "") -> dict:
+    """Verify one DOI against Crossref: title, authors, year, journal, abstract.
+
+    The returned ``status`` says what happened, because the difference
+    matters downstream:
+
+    * ``verified`` - Crossref resolved it and described it with a title.
+    * ``title_mismatch`` - it resolved, but to a *different* paper than the
+      one the note is about to claim. This is the dangerous case: the DOI is
+      real, the year may even be right, and only the title gives it away.
+    * ``not_found`` - Crossref says this DOI does not exist. It will not
+      verify on a later run either.
+    * ``temporarily_unavailable`` - the API was busy or unhappy. The entry
+      stays unverified but may verify next time.
+    * ``incomplete`` - the record exists but carries no title, so it cannot
+      be cited yet.
+
+    ``expected_title`` is optional. When given, the resolved title is
+    compared with it and a mismatch keeps the entry out of the reference
+    list.
+    """
     doi = normalise_doi(doi)
+    expected_title = str(expected_title or "").strip()
     if not doi:
-        return {"doi": "", "verified": False, "error": "DOI 为空"}
-    metadata = fetch_crossref_metadata(doi)
-    error = metadata.get("error", "")
+        return {
+            "doi": "",
+            "verified": False,
+            "status": "not_found",
+            "error": "DOI 为空",
+            "error_kind": "not_found",
+            "expected_title": expected_title,
+            "title_match": None,
+            "title_similarity": 0.0,
+        }
+    metadata = fetch_crossref_metadata(doi, mailto=mailto)
+    error = metadata.get("error", "") or ""
+    error_kind = metadata.get("error_kind", "") or ""
     abstract = metadata.get("abstract", "") or ""
+    title = metadata.get("title", "") or ""
     verified = not error
+    if error_kind in ("rate_limited", "server_error", "network", "bad_json"):
+        status = "temporarily_unavailable"
+    elif error_kind == "incomplete":
+        status = "incomplete"
+    elif error:
+        status = "not_found"
+    else:
+        status = "verified"
+
+    similarity = title_similarity(expected_title, title) if expected_title else 0.0
+    matched = None
+    if status == "verified" and expected_title:
+        matched = titles_match(expected_title, title)
+        if not matched:
+            status = "title_mismatch"
+            verified = False
+            error = "标题不匹配：解析得到《{}》，与预期的《{}》不同".format(
+                title or "（空）", expected_title
+            )
+            error_kind = "title_mismatch"
+
     return {
         "doi": doi,
         "verified": verified,
+        "status": status,
         "error": error,
-        "title": metadata.get("title", "") or "",
+        "error_kind": error_kind,
+        "expected_title": expected_title,
+        "title_match": matched,
+        "title_similarity": round(similarity, 3),
+        "title": title,
         "authors": list(metadata.get("authors") or []),
         "journal": metadata.get("journal", "") or "",
         "year": metadata.get("year", "") or "",
@@ -334,6 +456,21 @@ def verify_doi(doi: str, mailto: str = "") -> dict:
 
 def parse_doi_list(value: str) -> List[str]:
     """Accept a comma/space separated list, or the path of a text file."""
+    return [doi for doi, _ in parse_ref_specs(value)]
+
+
+def parse_ref_specs(value: str) -> List[Tuple[str, str]]:
+    """Parse a reference list into ``(doi, expected_title)`` pairs.
+
+    Each entry is either ``doi`` or ``doi|expected title``. The expected
+    title is what makes verification meaningful: a DOI that resolves to a
+    different paper is a failure, and only a title comparison catches it.
+
+    A title may contain spaces and commas, so the separator is read
+    line by line: everything after the first ``|`` on that line is the
+    title. Put one reference per line when using titles - a file is the
+    easiest way to do that.
+    """
     text = str(value or "").strip()
     if not text:
         return []
@@ -343,11 +480,39 @@ def parse_doi_list(value: str) -> List[str]:
             text = candidate.read_text(encoding="utf-8", errors="replace")
         except OSError:
             text = value
-    found = []
-    for token in re.split(r"[\s,;]+", text):
-        doi = normalise_doi(token)
-        if doi.startswith("10.") and doi not in found:
-            found.append(doi)
+
+    found: List[Tuple[str, str]] = []
+    seen = set()
+
+    def _add(doi: str, expected: str) -> None:
+        doi = normalise_doi(doi)
+        if doi.startswith("10.") and doi not in seen:
+            seen.add(doi)
+            found.append((doi, expected))
+
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if "|" in line:
+            raw_dois, _, raw_title = line.partition("|")
+            expected = raw_title.strip().replace("_", " ")
+            tokens = [
+                normalise_doi(token)
+                for token in re.split(r"[\s,;]+", raw_dois)
+                if normalise_doi(token).startswith("10.")
+            ]
+            if len(tokens) == 1:
+                _add(tokens[0], expected)
+            else:
+                # More than one DOI on a titled line: the title cannot be
+                # assigned safely, so keep the DOIs and drop the title
+                # rather than attach it to the wrong paper.
+                for token in tokens:
+                    _add(token, "")
+            continue
+        for token in re.split(r"[\s,;]+", line):
+            _add(token, "")
     return found
 
 
@@ -359,6 +524,19 @@ def _sort_key(entry: dict) -> Tuple:
     except (TypeError, ValueError):
         year = 0
     return (role, -year, entry.get("doi", ""))
+
+
+def _candidate_key(entry: dict) -> Tuple:
+    """Candidates that failed a check come first: they need a decision."""
+    roles = entry.get("roles") or []
+    role = min((ROLE_PRIORITY.get(item, 99) for item in roles), default=99)
+    status = (entry.get("status") or "pending").strip()
+    failed = 0 if status not in ("", "pending", "verified") else 1
+    try:
+        year = int(entry.get("year") or 0)
+    except (TypeError, ValueError):
+        year = 0
+    return (failed, role, -year, entry.get("doi", ""))
 
 
 def build_working_set(
@@ -392,7 +570,12 @@ def build_working_set(
             entries[doi] = {
                 "doi": doi,
                 "verified": False,
+                "status": "pending",
                 "error": "",
+                "error_kind": "",
+                "expected_title": "",
+                "title_match": None,
+                "title_similarity": 0.0,
                 "title": "",
                 "authors": [],
                 "journal": "",
@@ -418,8 +601,14 @@ def build_working_set(
         return doi
 
     anchor_doi = normalise_doi(anchor)
-    for doi in parse_doi_list(",".join(refs or [])):
+    if isinstance(refs, str):
+        ref_text = refs
+    else:
+        ref_text = "\n".join(str(item) for item in (refs or []))
+    for doi, expected_title in parse_ref_specs(ref_text):
         _register(doi, "user_supplied")
+        if expected_title:
+            entries[doi]["expected_title"] = expected_title
 
     topic_result = {"topic": topic, "items": [], "total": 0, "error": ""}
     if topic:
@@ -464,11 +653,16 @@ def build_working_set(
     ordered = sorted(order, key=lambda doi: (_rank(doi), order.index(doi)))
     budget = max(1, int(max_refs))
     verified_count = 0
+    transient_failures = 0
     for index, doi in enumerate(ordered, 1):
         if verified_count >= budget:
             break
         emit("  核验 {}/{}: {}".format(index, min(len(ordered), budget), doi))
-        verified = verify_doi(doi, mailto=mailto)
+        verified = verify_doi(
+            doi,
+            mailto=mailto,
+            expected_title=entries[doi].get("expected_title", ""),
+        )
         entry = entries[doi]
         for key, value in verified.items():
             if key == "roles":
@@ -478,13 +672,18 @@ def build_working_set(
             entry.get("roles") or [], key=lambda role: ROLE_PRIORITY.get(role, 99)
         )
         verified_count += 1
+        if entry.get("status") == "temporarily_unavailable":
+            transient_failures += 1
+            emit("    [WARN] {} 未核验：{}（可重跑）".format(doi, entry.get("error", "")))
+        elif entry.get("status") == "title_mismatch":
+            emit("    [WARN] {} 标题不匹配：{}".format(doi, entry.get("error", "")))
 
     references = [
         entry for entry in sorted(entries.values(), key=_sort_key)
         if entry.get("verified")
     ]
     candidates = [
-        entry for entry in sorted(entries.values(), key=_sort_key)
+        entry for entry in sorted(entries.values(), key=_candidate_key)
         if not entry.get("verified")
     ]
 
@@ -503,6 +702,17 @@ def build_working_set(
             "predecessors_found": len(predecessors),
             "forward_citations_found": len(forward),
             "include_forward": bool(include_forward),
+        },
+        "verification": {
+            "attempted": verified_count,
+            "budget": budget,
+            "verified": len(references),
+            "failed": len(candidates),
+            "transient_failures": transient_failures,
+            "note": (
+                "未核验条目不得直接写进笔记：DOI 不存在与接口暂时不可用是两种情况，"
+                "后者重跑即可；两者都不得用猜测的 DOI 替代。"
+            ),
         },
         "evidence_tiers": {
             tier: {"label": EVIDENCE_TIER_LABELS[tier], "help": EVIDENCE_TIER_HELP[tier]}
@@ -532,6 +742,44 @@ def _authors_line(authors: List[str]) -> str:
     return "{} 等 {} 人".format("; ".join(authors[:3]), len(authors))
 
 
+# Why an entry could not be verified, in the reader's language. The point of
+# naming the reason is that "the DOI does not exist" and "Crossref was busy"
+# lead to different next steps - and neither of them is a licence to invent a
+# DOI that looks right.
+FAILURE_LABELS = {
+    "not_found": "DOI 不存在（Crossref 404，不会再核验成功）",
+    "temporarily_unavailable": "接口暂时不可用（限流或网络问题，可重跑）",
+    "incomplete": "记录存在但无标题（不能引用）",
+    "title_mismatch": "标题不匹配：这个 DOI 指向另一篇文献，不能引用",
+    "pending": "未核验（超出本次预算或未尝试）",
+    "network": "网络错误（可重跑）",
+    "rate_limited": "被限流（可重跑）",
+    "server_error": "服务端错误（可重跑）",
+    "bad_json": "响应异常（可重跑）",
+}
+
+
+def _failure_note(entry: dict) -> str:
+    status = (entry.get("status") or "").strip()
+    if not status or status == "verified":
+        return ""
+    label = FAILURE_LABELS.get(status, status)
+    error = (entry.get("error") or "").strip()
+    if error and error not in label:
+        return "{}；{}".format(label, _short(error, 60))
+    return label
+
+
+def _title_check_note(entry: dict) -> str:
+    """How the title check went: checked and matched, or not checked at all."""
+    expected = (entry.get("expected_title") or "").strip()
+    if not expected:
+        return "未提供预期标题"
+    if entry.get("title_match"):
+        return "与预期标题一致"
+    return "**不一致**"
+
+
 def render_candidates_md(payload: dict) -> str:
     topic = payload.get("topic") or "（未命名主题）"
     anchor = payload.get("anchor_doi") or ""
@@ -545,6 +793,9 @@ def render_candidates_md(payload: dict) -> str:
         "> 口径说明：本清单来自**主题检索**（Crossref relevance）与用户指定的 DOI，",
         "> 与 `--new-literature` 的**期刊页面扫描**不是同一件事，不可混用同一份清单。",
         "> 元数据由 Crossref 逐条核验；`核验=否` 的条目不得直接写进笔记。",
+        "> 核验失败分两种：DOI 不存在（重试无用）与接口暂时不可用（重跑即可）。",
+        "> 两种都不允许用猜测的 DOI 代替。",
+        "> 标题核对列写明核验结果是不是你要引的那一篇——**能解析不等于核验通过**。",
         "",
         "- 生成时间：{}".format(payload.get("generated_at", "")),
         "- 主题检索式：`{}`".format(query.get("topic_query", "") or "（未使用）"),
@@ -554,8 +805,8 @@ def render_candidates_md(payload: dict) -> str:
         "",
         "## 1. 已核验条目（Crossref）",
         "",
-        "| # | 角色 | 年份 | 标题 | 期刊 | DOI | 摘要 | 默认层级 |",
-        "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
+        "| # | 角色 | 年份 | 标题 | 期刊 | DOI | 摘要 | 标题核对 | 默认层级 |",
+        "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
     ]
     index = 0
     for entry in references:
@@ -564,7 +815,7 @@ def render_candidates_md(payload: dict) -> str:
             ROLE_LABELS.get(role, role) for role in entry.get("roles") or []
         )
         lines.append(
-            "| {} | {} | {} | {} | {} | [{}](https://doi.org/{}) | {} | {} |".format(
+            "| {} | {} | {} | {} | {} | [{}](https://doi.org/{}) | {} | {} | {} |".format(
                 index,
                 roles,
                 entry.get("year") or "—",
@@ -573,18 +824,19 @@ def render_candidates_md(payload: dict) -> str:
                 entry.get("doi", ""),
                 entry.get("doi", ""),
                 "有" if entry.get("abstract_available") else "无",
+                _title_check_note(entry),
                 EVIDENCE_TIER_LABELS.get(entry.get("default_tier", ""), ""),
             )
         )
     if not references:
-        lines.append("| — | — | — | 无已核验条目 | — | — | — | — |")
+        lines.append("| — | — | — | 无已核验条目 | — | — | — | — | — |")
 
     lines += [
         "",
         "## 2. 待核验候选（仅作线索）",
         "",
-        "| # | 角色 | 年份 | 线索标题 | 期刊 | DOI |",
-        "| :--- | :--- | :--- | :--- | :--- | :--- |",
+        "| # | 角色 | 年份 | 线索标题 | 期刊 | DOI | 未核验原因 |",
+        "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
     ]
     offset = index
     for entry in candidates:
@@ -593,7 +845,7 @@ def render_candidates_md(payload: dict) -> str:
             ROLE_LABELS.get(role, role) for role in entry.get("roles") or []
         )
         lines.append(
-            "| {} | {} | {} | {} | {} | [{}](https://doi.org/{}) |".format(
+            "| {} | {} | {} | {} | {} | [{}](https://doi.org/{}) | {} |".format(
                 offset,
                 roles,
                 entry.get("year") or "—",
@@ -601,10 +853,11 @@ def render_candidates_md(payload: dict) -> str:
                 _short(entry.get("journal", ""), 40) or "—",
                 entry.get("doi", ""),
                 entry.get("doi", ""),
+                _failure_note(entry),
             )
         )
     if not candidates:
-        lines.append("| — | — | — | 无待核验候选 | — | — |")
+        lines.append("| — | — | — | 无待核验候选 | — | — | — |")
 
     lines += ["", "## 3. 已核验条目摘要（写作用原文依据）", ""]
     for number, entry in enumerate(references, 1):
@@ -667,7 +920,41 @@ def render_factcheck_md(payload: dict) -> str:
 
     lines += [
         "",
-        "## 2. 论断级复核（笔记每条关键论断一行）",
+        "## 2. 未能核验的条目（不得写进笔记，除非先解决）",
+        "",
+        "| # | DOI | 角色 | 未核验原因 | 下一步 |",
+        "| :--- | :--- | :--- | :--- | :--- |",
+    ]
+    failed = [
+        entry for entry in candidates
+        if (entry.get("status") or "") not in ("", "pending")
+    ]
+    for number, entry in enumerate(failed, 1):
+        roles = "/".join(
+            ROLE_LABELS.get(role, role) for role in entry.get("roles") or []
+        )
+        reason = _failure_note(entry)
+        status = entry.get("status") or ""
+        if status == "not_found":
+            action = "确认 DOI 是否抄错；无法确认就放弃该条目"
+        elif status == "incomplete":
+            action = "回到出版商页面取标题与作者后再核验"
+        else:
+            action = "稍后重跑 `--thematic-review`（可加 `--refs` 单独核验）"
+        lines.append(
+            "| {} | [{}](https://doi.org/{}) | {} | {} | {} |".format(
+                number, entry.get("doi", ""), entry.get("doi", ""), roles, reason, action
+            )
+        )
+    if not failed:
+        lines.append("| — | — | — | 无 | — |")
+
+    lines += [
+        "",
+        "> **不要用看起来对的 DOI 代替核验失败的条目。** 一个编造的 DOI 与一篇真论文"
+        "在参考文献表里长得一模一样，读者无法分辨，直到某天它被引用。",
+        "",
+        "## 3. 论断级复核（笔记每条关键论断一行）",
         "",
         "| # | 论断（原文摘录） | 证据锚点 | 来源类型 | 层级 | 已复核 |",
         "| :--- | :--- | :--- | :--- | :--- | :--- |",
@@ -678,7 +965,7 @@ def render_factcheck_md(payload: dict) -> str:
             "{} {}".format(EVIDENCE_TIER_LABELS[tier], tier) for tier in EVIDENCE_TIERS
         ),
         "",
-        "## 3. 机器无法覆盖的检查项",
+        "## 4. 机器无法覆盖的检查项",
         "",
         "- [ ] 图表数值与原文逐一比对（坐标轴、单位、误差棒、对照组）",
         "- [ ] 样本量、地点、时间窗、关键参数与原文一致",
@@ -686,7 +973,7 @@ def render_factcheck_md(payload: dict) -> str:
         "- [ ] 后续检验确实检验了锚定论文的结论，而不是无关的引用",
         "- [ ] 每张嵌入的图件来自 `manifest.json` 的原文图注，未自行改写",
         "",
-        "## 4. 复核结论",
+        "## 5. 复核结论",
         "",
         "- 复核人：",
         "- 完成日期：",
@@ -759,7 +1046,7 @@ def render_console(payload: dict) -> str:
         )
     if candidates:
         lines.append("")
-        lines.append("  待核验候选（仅线索）：")
+        lines.append("  待核验候选（仅线索，不得直接写进笔记）：")
         for entry in candidates[:15]:
             lines.append(
                 "    - {} {} {}".format(
@@ -768,6 +1055,17 @@ def render_console(payload: dict) -> str:
                     _short(entry.get("title", ""), 70),
                 )
             )
+            reason = _failure_note(entry)
+            if reason:
+                lines.append("      {}".format(reason))
+    verification = payload.get("verification") or {}
+    if verification.get("transient_failures"):
+        lines.append("")
+        lines.append(
+            "  [WARN] {} 条因接口限流/网络问题未核验；重跑同一条命令即可补上。".format(
+                verification.get("transient_failures")
+            )
+        )
     lines.append("")
     lines.append("下一步（由 Agent 完成，脚本不写综述正文）：")
     lines.append("  1. 读候选清单与摘要，选出锚定论文与引用网络")

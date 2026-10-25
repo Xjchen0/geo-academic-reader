@@ -148,6 +148,15 @@ Observations from running this workspace on real papers. The theme is the same t
 - Prefer the environment the user is already in. If a conda env or a venv is activated and the dependencies import there, `python main.py …` is the right command — building a second environment on top of a working one is busywork the user did not ask for.
 - The scan must never install anything by itself. It reports a command (`uv sync`, `python -m pip install -r requirements.txt`); the agent decides whether to run it. A detector that also mutates the machine is a setup wizard wearing a detector's clothes.
 
+## [tags: verification, crossref, doi, hallucination] A DOI That Resolves Is Not a DOI You Meant
+
+- Field failure: an agent produced `10.5194/egusphere-egu25-12628` for a paper it claimed was a 2020 review. The DOI resolves — to a real conference abstract on a related topic, with a plausible year. It survives every "does the link work?" check and would have been cited for years.
+- The lesson generalises: **resolution is not identity**. A wrong DOI and a right DOI are both real; only the title distinguishes them. Verification that stops at "HTTP 200" verifies nothing.
+- So verification now compares the resolved title with the title the note is about to claim (`--refs "doi|expected title"`). A mismatch keeps the entry out of the reference list and says what came back instead.
+- Distinguish the failure kinds, because they demand different responses: `not_found` (the DOI does not exist — retrying is pointless), `temporarily_unavailable` (the API was busy — rerun), `title_mismatch` (it points at a different paper — change the DOI or change what you cite).
+- Never let a failed lookup become an invented one. A fabricated DOI is indistinguishable from a real one in a reference list until somebody tries to cite it.
+- Rate-limited APIs need patience, not luck: retry 429 and 5xx with a backoff, honour `Retry-After`, never retry a 404, report a non-JSON body as a failure instead of letting a decoder traceback escape, and leave a gap between calls. The old code turned a throttled response into an opaque `Expecting value: line 1 column 1` and the agent filled the gap with a guess.
+
 ## [tags: style, writing, tutorial, neutrality] Plain, Logical, Tutorial — Without Losing Restraint
 
 - A note that only a specialist can read is not reusable by the person who most needs it: someone who just entered the subfield. The user's correction on the 0.6.0 draft was exactly this — "不能写得太晦涩，要兼具学术的平实性，又要有研究的逻辑性，甚至带有一点教程性质，把这个专业刚入门的讲懂，但是不能失去平实克制".

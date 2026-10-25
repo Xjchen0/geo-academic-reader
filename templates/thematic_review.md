@@ -29,6 +29,10 @@ tags: []
 8. 人工事实复核：写清哪些条目已回到原文核对、哪些仍未核验；
    工作底稿在 `.raw/reviews/<slug>/factcheck.md`。
 9. 每篇被讨论的文献必须有 DOI 或稳定链接；无法核验的条目标注“自动构造，需核对”。
+   能解析不等于核验通过：known DOI 也会解析到另一篇论文，
+   所以用 --refs "doi|预期标题" 交给脚本做标题比对；
+   核验失败分 not_found / temporarily_unavailable / title_mismatch 三类，
+   任何一种都不许用“看起来对”的 DOI 顶替。
 10. 图文并茂是硬要求：至少嵌入 3 张原文图件，路径固定为 assets/<slug>/fig_XX.png。
     先用 --doi 为关键文献建立证据包，再从 papers/assets/<slug>/ 取图；
     每张图配 “> **读图要点**” 读图块。图注必须来自 .raw/<slug>/figures/manifest.json。

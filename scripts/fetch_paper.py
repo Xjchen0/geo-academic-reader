@@ -32,6 +32,7 @@ from .figures import (
     pick_srcset,
     upgrade_figure_url,
 )
+from .http_json import build_headers, request_json
 
 
 def _headers(extra: Optional[dict] = None) -> dict:
@@ -64,51 +65,84 @@ def _date_year(message: dict) -> str:
     return ""
 
 
-def fetch_crossref_metadata(doi: str) -> Dict[str, object]:
-    """Retrieve publication metadata from Crossref."""
+def fetch_crossref_metadata(doi: str, mailto: str = "") -> Dict[str, object]:
+    """Retrieve publication metadata from Crossref.
+
+    Uses the patient client in ``http_json``: 429/5xx are retried with a
+    backoff, a 404 is reported as a final "not found", and a body that is
+    not JSON is reported as such instead of crashing the caller. The error
+    string always says which of the two happened, because "this DOI does not
+    exist" and "Crossref is busy" call for different next steps.
+    """
     doi = (doi or "").strip()
     if not doi:
         return {"doi": "", "error": "empty DOI"}
     url = CROSSREF_API_URL + quote(doi, safe="")
-    try:
-        response = requests.get(
-            url,
-            headers=_headers({"Accept": "application/json"}),
-            timeout=20,
-        )
-        if response.status_code == 404:
-            return {"doi": doi, "error": "404 Not Found (Crossref)"}
-        response.raise_for_status()
-        message = response.json().get("message", {})
-        authors = []
-        for author in message.get("author", []) or []:
-            name = " ".join(
-                part for part in (author.get("given", ""), author.get("family", "")) if part
-            ).strip()
-            if not name:
-                name = author.get("name", "") or ""
-            if name:
-                authors.append(name)
-        container = message.get("container-title") or []
-        short_container = message.get("short-container-title") or []
-        journal = _first(container) or _first(short_container) or ""
+    result = request_json(
+        url,
+        headers=build_headers(mailto, accept="application/json"),
+        timeout=20,
+        mailto=mailto,
+    )
+    if not result.get("ok"):
         return {
-            "title": clean_jats(_first(message.get("title"))),
-            "authors": authors,
-            "journal": clean_jats(journal),
-            "year": _date_year(message),
-            "abstract": clean_jats(message.get("abstract", "")),
             "doi": doi,
-            "type": message.get("type", ""),
-            "publisher": message.get("publisher", ""),
-            "url": message.get("URL", ""),
-            "license": _first((message.get("license") or [{}])[0].get("URL", ""))
-            if message.get("license")
-            else "",
-            "source": "crossref",
+            "error": result.get("error", "请求失败"),
+            "error_kind": result.get("kind", "other"),
+            "http_status": result.get("status", 0),
+            "attempts": result.get("attempts", 0),
         }
-    except Exception as exc:
-        return {"doi": doi, "error": str(exc)}
+    message = (result.get("data") or {}).get("message", {})
+    if not message:
+        return {
+            "doi": doi,
+            "error": "Crossref 返回空的 message 字段",
+            "error_kind": "bad_json",
+            "http_status": result.get("status", 0),
+            "attempts": result.get("attempts", 0),
+        }
+    authors = []
+    for author in message.get("author", []) or []:
+        name = " ".join(
+            part for part in (author.get("given", ""), author.get("family", "")) if part
+        ).strip()
+        if not name:
+            name = author.get("name", "") or ""
+        if name:
+            authors.append(name)
+    container = message.get("container-title") or []
+    short_container = message.get("short-container-title") or []
+    journal = _first(container) or _first(short_container) or ""
+    title = clean_jats(_first(message.get("title")))
+    if not title:
+        # A DOI without a title is not a verified reference; it is a record
+        # Crossref has not described yet.
+        return {
+            "doi": doi,
+            "error": "Crossref 未提供标题，无法核验",
+            "error_kind": "incomplete",
+            "http_status": result.get("status", 0),
+            "attempts": result.get("attempts", 0),
+        }
+    return {
+        "title": title,
+        "authors": authors,
+        "journal": clean_jats(journal),
+        "year": _date_year(message),
+        "abstract": clean_jats(message.get("abstract", "")),
+        "doi": doi,
+        "type": message.get("type", ""),
+        "publisher": message.get("publisher", ""),
+        "url": message.get("URL", ""),
+        "license": _first((message.get("license") or [{}])[0].get("URL", ""))
+        if message.get("license")
+        else "",
+        "source": "crossref",
+        "error": "",
+        "error_kind": "",
+        "http_status": result.get("status", 0),
+        "attempts": result.get("attempts", 0),
+    }
 
 
 def fetch_apa_citation(doi: str) -> str:

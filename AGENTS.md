@@ -16,7 +16,7 @@ Every session, before any command that touches literature:
 1. Read `AGENTS.md` (this file), then `MEMORY.md` (durable decisions), then `LESSONS.md` (failure modes). Do not start from `--help` and infer the contract from flags.
 2. Run `python3 main.py --preflight`. It checks the three documents, Python and packages, Chrome/CDP, VS Code settings, the profile and the workspace role (`code repository` vs `test workspace`), then writes `.geo-reader/preflight.json`.
 3. Confirm the environment with the user in plain language (§0.2). `--preflight` never installs anything.
-4. Literature commands (`--doi`, `--url`, `--pdf`, `--batch-pdfs`, `--new-literature`, `--check-note`, `--index`) require a marker that is **less than 24 hours old, from this version, `ok`, and written after the profile existed**. Otherwise the CLI exits 2. The fix is to run `--preflight` again, not to bypass it.
+4. Literature commands (`--doi`, `--url`, `--pdf`, `--batch-pdfs`, `--new-literature`, `--thematic-review`, `--check-note`, `--index`) require a marker that is **less than 24 hours old, from this version, `ok`, and written after the profile existed**. Otherwise the CLI exits 2. The fix is to run `--preflight` again, not to bypass it.
 5. `--no-preflight` / `GEO_READER_SKIP_PREFLIGHT=1` exist for deliberate emergencies. Use them only when the user explicitly asks, and say in the reply what was skipped.
 
 The marker proves the check ran; it does not prove you read the documents. Never fabricate `preflight.json`, claim a read you did not do, or present a blocked command as a success.
@@ -349,6 +349,44 @@ Rules that keep this honest:
 5. `--check-note` 对 `note_type` 含“主题”的笔记额外检查（见 §1.9）：锚定论文、竞争解释、后续检验、证据层级、人工事实复核章节。
 
 > **边界**：主题综述不是“系统综述”。没有记录检索式、数据库、时间范围和纳入/排除标准，就不要写“系统综述”“meta 分析”这类词。
+
+### 1.8b 能解析 ≠ 核验通过：标题核对（P0）
+
+**一个能解析的 DOI 可能指向另一篇真实文献。** 现场发生过：编造的 DOI
+`10.5194/egusphere-egu25-12628` 能解析，解析出的是一篇关于南极冰盖滞后性的会议摘要，
+年份也对得上，只有标题不同——而笔记把它写成了一篇 2020 年的综述。
+只查“DOI 能不能打开”抓不住这类错误，**只有标题比对能抓住**。
+
+因此：
+
+- `--refs` 接受 `doi|预期标题` 形式（一行一条；标题里可以有逗号）：
+
+  ```bash
+  python3 main.py --thematic-review "" --refs refs.txt
+  ```
+
+  ```
+  10.1038/s41561-026-02104-z|Experimental constraints on a long-lived magma layer at the Martian core-mantle boundary
+  10.5194/egusphere-egu25-12628|Marine-based ice sheets and sea-level rise
+  ```
+
+- 核验时脚本把 Crossref 返回的标题与预期标题比对，相似度不足即判 `title_mismatch`：
+  该条目**不进参考文献表**，落到 `candidates.md` 的“待核验候选”里，附上
+  “解析得到《X》，与预期的《Y》不同”。
+- `candidates.md` 的已核验表有一列“标题核对”：**与预期标题一致** / **未提供预期标题**。
+- 写完笔记后，用**笔记里写的标题**回头再核一遍 DOI，是最省事的兜底：
+
+  ```bash
+  python3 main.py --thematic-review "" --refs refs.txt
+  ```
+
+  文件里每行写成 `DOI|笔记里写的标题`。这一步能抓住“DOI 是对的、引用对象是错的”。
+
+- 核验失败分三类，不要混为一谈：
+  `not_found`（DOI 不存在，重试无用）、`temporarily_unavailable`（限流或网络，重跑即可）、
+  `title_mismatch`（指向别的文献，必须换 DOI 或改引用对象）。
+- **任何一种失败，都不许用“看起来对”的 DOI 顶替。** 编造的 DOI 与真论文在参考文献表里
+  长得一模一样，读者分不出来，直到某天它被引用。
 
 ### 1.9 主题综述的证据层级与复核约定（P0）
 

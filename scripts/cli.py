@@ -40,7 +40,6 @@ from .preflight import (
 from .thematic_review import (
     DEFAULT_MAX_REFS,
     build_working_set,
-    parse_doi_list,
     render_console as render_review_console,
     write_working_set,
 )
@@ -271,6 +270,7 @@ def _run_thematic_review(args) -> int:
         print("用法：--thematic-review \"主题\" [--refs \"doi1,doi2\"] "
               "[--anchor-doi 10.xxxx/yyyy]")
         print("说明：主题综述走 Crossref 核验路线；--new-literature 走期刊页面扫描路线，两者不同。")
+        print("      需要同时核对标题时用 --refs \"doi|预期标题\"（一行一条）。")
         return 1
 
     quiet = getattr(args, "json", False) or getattr(args, "quiet", False)
@@ -278,7 +278,7 @@ def _run_thematic_review(args) -> int:
     try:
         payload = build_working_set(
             topic=topic,
-            refs=parse_doi_list(refs),
+            refs=refs,
             anchor=anchor,
             max_refs=getattr(args, "max_refs", DEFAULT_MAX_REFS),
             from_year=getattr(args, "from_year", None),
@@ -544,7 +544,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sort", choices=["journal", "date"], help="Group candidates by journal or list them by date")
     parser.add_argument("--no-translate", action="store_true", help="Skip Chinese titles in the new-literature scan")
 
-    parser.add_argument("--refs", metavar="DOIS", help="With --thematic-review: comma-separated DOIs or a file holding them")
+    parser.add_argument(
+        "--refs",
+        metavar="DOIS",
+        help=(
+            "With --thematic-review: comma-separated DOIs or a file holding them. "
+            "Use 'doi|expected title' (one per line) to also check that each DOI "
+            "resolves to the paper you mean, not just to some paper."
+        ),
+    )
     parser.add_argument("--anchor-doi", metavar="DOI", help="With --thematic-review: the anchor paper of the review")
     parser.add_argument("--max-refs", type=int, default=DEFAULT_MAX_REFS, help="With --thematic-review: maximum verified references (default: 25)")
     parser.add_argument("--from-year", type=int, help="With --thematic-review: earliest publication year")

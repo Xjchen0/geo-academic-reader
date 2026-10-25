@@ -125,6 +125,7 @@ Each candidate carries the English title plus a `中文（机译）：` line. Th
 python3 main.py --thematic-review "<topic>" --anchor-doi "10.xxxx/yyyy"
 python3 main.py --thematic-review "<topic>" --refs "10.x/yyy,10.z/www" --from-year 1990
 python3 main.py --thematic-review "<topic>" --anchor-doi <DOI> --max-refs 30 --no-forward
+python3 main.py --thematic-review "" --refs refs.txt        # one "doi|expected title" per line
 ```
 
 **A thematic review is not the journal scan.** The scan answers "what did these journals publish lately"; a thematic review answers "what does the evidence say about this question". Never substitute one for the other.
@@ -136,6 +137,10 @@ The command does three things and writes no prose:
 3. **Citation network** — predecessors from the anchor's Crossref reference list, later tests from OpenAlex forward citations. OpenAlex only *finds* them; every candidate still passes through Crossref.
 
 Output: `.raw/reviews/<slug>/` with `candidates.md` (numbered list + abstracts), `references.json` (structured verification) and `factcheck.md` (the human fact-check sheet).
+
+**Resolution is not identity.** A wrong DOI can resolve to a different real paper — with a plausible year — and survive every "does the link open?" check. When you know which paper you mean, pass the title too: `--refs "10.x/yyy|The title you expect"`, one reference per line in a file. The resolved title is then compared with the expected one, and a mismatch keeps the entry out of the reference list.
+
+The failure kinds are not interchangeable: `not_found` (the DOI does not exist — retrying is pointless), `temporarily_unavailable` (the API was busy — rerun the command), `title_mismatch` (it points at another paper — change the DOI or change what you cite). Never replace a failed lookup with an invented DOI.
 
 Then write the note from `templates/thematic_review.md`: an anchor paper (front matter `anchor_doi`, and the anchor must also appear in the reference list), a citation-network table covering prehistory, rivals and later tests, at least two competing explanations with the criterion each one relies on, a later-tests section (“检索未覆盖” when nothing was searched), evidence tiers on every key claim, and a human fact-check section.
 
