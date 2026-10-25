@@ -1,6 +1,6 @@
 # geo-academic-reader
 
-[![Version](https://img.shields.io/badge/version-0.5.1-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
+[![Version](https://img.shields.io/badge/version-0.6.0-blue.svg)](https://github.com/Xjchen0/geo-academic-reader)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-green.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
@@ -18,6 +18,12 @@ geo-academic-reader is a **literature workspace for AI agents**. Scripts open th
 
 ## 1. Install and deploy
 
+There are two ways in. The first is the one we recommend.
+
+**A. The conversation.** Clone the repository, open the folder in your agent, and say `开始使用`. The agent reads the contract, scans your Python environment in a fixed order, reports what it found, and asks before it installs anything. There is no setup script to run and no wizard to click.
+
+**B. The installer (optional).** `./install.sh`, `.\install.ps1` or `python install.py` does the same environment preparation in one command. It is a convenience, not a prerequisite — nothing in the workflow requires it.
+
 ### 1.1 Requirements
 
 | Requirement | Version | Why | If missing |
@@ -30,7 +36,24 @@ geo-academic-reader is a **literature workspace for AI agents**. Scripts open th
 
 `pymupdf` is the only optional package. Everything else is required.
 
-### 1.2 Install
+### 1.2 Set up
+
+**A. The conversation (recommended)**
+
+```bash
+git clone https://github.com/Xjchen0/geo-academic-reader.git
+cd geo-academic-reader
+```
+
+Open this folder in your agent and say:
+
+```text
+开始使用
+```
+
+(English is fine too: `Start`.) The agent then: reads `AGENTS.md`, `MEMORY.md` and `LESSONS.md`; runs the environment scan below and reports it; confirms OS, Python, packages, browser, editor and workspace role with you in plain language; asks the preference questions; writes `.geo-reader/profile.json`; reruns the preflight so the literature commands unlock; and gives you a short tour with exactly one first exercise.
+
+**B. The installer (optional)**
 
 ```bash
 git clone https://github.com/Xjchen0/geo-academic-reader.git
@@ -50,22 +73,7 @@ Any platform, no shell differences:
 python install.py
 ```
 
-The installer checks Python, installs the required packages, reports the browser situation, and creates the empty `papers/` tree. **It never asks for a DOI, never writes a profile, and never creates reading data** — that happens in conversation, in step 2.
-
-**If you manage Python with `uv`** (recommended, especially on Windows):
-
-```bash
-git clone https://github.com/Xjchen0/geo-academic-reader.git
-cd geo-academic-reader
-uv sync                          # creates .venv/ and installs the project + dependencies
-uv run python main.py --preflight
-```
-
-`uv sync` reads `pyproject.toml`, resolves the dependencies and installs the project itself, so `uv run python main.py …` works without activating anything. `install.py` detects `uv` and runs `uv sync` for you when you do use it. `uv.lock` is git-ignored on purpose: the project supports Python 3.9–3.12 and pip installs, so the resolution stays per-machine — delete the file to re-resolve.
-
-> **Windows note**
->
-> On a fresh Windows install, `python` and `python3` on `PATH` resolve to the Microsoft Store alias (`AppData\Local\Microsoft\WindowsApps\python3.exe`), a zero-byte stub that exits with code **49** and prints nothing. Use `uv sync` + `uv run`, or install Python from python.org and tick **Add Python to PATH**. `--preflight` and `doctor.py` now name the stub explicitly instead of leaving a bare exit 49.
+The installer checks Python, installs the required packages, reports the browser situation, and creates the empty `papers/` tree. **It never asks for a DOI, never writes a profile, and never creates reading data** — that happens in conversation.
 
 Optional: put the CLI on your `PATH`.
 
@@ -75,7 +83,33 @@ geo-reader --preflight      # the same entry point as python3 main.py
 geo-doctor                  # verbose diagnostics
 ```
 
-### 1.3 Verify the installation
+### 1.3 The environment scan
+
+A cloned repository sits on top of *some* Python — not always one with the dependencies, and not always one on `PATH`. So the workspace scans a **fixed order** and tells you what it found:
+
+```text
+uv  ->  conda  ->  venv  ->  plain Python
+```
+
+| Order | Candidate | Detected by | Run with | Prepare command |
+| :--- | :--- | :--- | :--- | :--- |
+| 1 | `uv` | `uv` on `PATH`, or a project `.venv/` | `uv run python main.py` | `uv sync` |
+| 2 | `conda` | `conda` on `PATH`; an activated env counts as active | `python main.py` (activated) or `conda run -n base python main.py` | `conda create -n geo-reader python=3.11 -y` |
+| 3 | `venv` | `.venv/`, `venv/`, `env/` in the project, or an activated virtualenv | `python main.py` | `python -m venv .venv` |
+| 4 | plain Python | `python3` / `python` on `PATH` that is not the Store stub | `python3 main.py` | `python3 -m pip install -r requirements.txt` |
+
+Two rules make the scan safe to run at any moment:
+
+- **It never installs anything.** It reports a command; you decide whether to run it. The agent asks before it installs, too.
+- **An environment you are already in wins.** If you sit in a conda env or a venv and the dependencies are there, that one is recommended — running `python main.py` where you already are beats building a second environment.
+
+The result appears on the `Env:` line of `--preflight`, and in full in `doctor.py`. `uv` is the recommended route on Windows: `uv sync` reads `pyproject.toml`, resolves the dependencies and installs the project itself, so `uv run python main.py …` works without activating anything. `uv.lock` is git-ignored on purpose — the project supports Python 3.9–3.12 and pip installs, so the resolution stays per-machine; delete the file to re-resolve.
+
+> **Windows note**
+>
+> On a fresh Windows install, `python` and `python3` on `PATH` resolve to the Microsoft Store alias (`AppData\Local\Microsoft\WindowsApps\python3.exe`), a zero-byte stub that exits with code **49** and prints nothing. The scan names it explicitly instead of leaving a bare exit 49. Use `uv sync` + `uv run`, or install Python from python.org and tick **Add Python to PATH**.
+
+### 1.4 Verify the installation
 
 ```bash
 python3 main.py --preflight
@@ -92,17 +126,18 @@ It prints one checklist and writes `.geo-reader/preflight.json`:
 | Contract docs | `AGENTS.md`, `MEMORY.md`, `LESSONS.md` present | Restore them from the release; never write empty placeholders |
 | OS and Python | Python ≥ 3.9 | Give the upgrade path; do not continue |
 | Packages | `requests`, `beautifulsoup4`, `pypdf`, `websockets` | Give the exact `pip install` line; **ask before installing** |
+| Environment | The scan picked a runnable interpreter | Follow its prepare command; `uv` first |
 | Browser | Chrome / Chromium / Edge; CDP 9222 optional | Offer to install, or accept HTTP/PDF fallback with lower-quality figures |
 | Editor | The profile's editor; `.vscode/settings.json` | Explain how to create it; do not change settings unasked |
 | Workspace role | `code repository` or `test workspace` | Explain whether this folder carries local reading data |
 
-The marker is valid for **24 hours and tied to this version**. `--doi`, `--url`, `--pdf`, `--batch-pdfs`, `--new-literature`, `--check-note` and `--index` require it; otherwise the CLI exits 2. The fix is to re-run the check — never to bypass it.
+The marker is valid for **24 hours and tied to this version**. `--doi`, `--url`, `--pdf`, `--batch-pdfs`, `--new-literature`, `--thematic-review`, `--check-note` and `--index` require it; otherwise the CLI exits 2. The fix is to re-run the check — never to bypass it.
 
 > **Why a gate**
 >
 > Agents tend to run commands first and read the contract later. The marker turns "skipped the check" into an explicit failure instead of a silent downgrade. It proves the check ran; it does not prove the documents were read — so the documents also say: never fabricate the marker.
 
-### 1.4 Deploy as a reading workspace (recommended)
+### 1.5 Deploy as a reading workspace (recommended)
 
 The same repository has two roles. `--preflight` detects which one and prints it on the `Role:` line:
 
@@ -127,10 +162,10 @@ Open the folder in your agent (VS Code, Cursor, Claude Code, Antigravity, Windsu
 开始使用
 ```
 
-(English is fine too: `Start`.) The agent will:
+The agent will:
 
 1. read `AGENTS.md`, `MEMORY.md` and `LESSONS.md` instead of guessing from flags;
-2. run `python3 main.py --preflight` and confirm OS, Python, packages, Chrome, editor and workspace role with you, in plain language;
+2. run the environment scan and `--preflight`, and confirm OS, Python, packages, Chrome, editor and workspace role with you, in plain language;
 3. ask seven short preference questions and write `.geo-reader/profile.json`;
 4. rerun preflight so literature commands unlock;
 5. give a short tour of the tree and offer exactly one first exercise.
@@ -147,9 +182,9 @@ Open the folder in your agent (VS Code, Cursor, Claude Code, Antigravity, Windsu
 | Browser policy | `auto`, `existing`, `off` | Launch/reuse Chrome, or HTTP/PDF only |
 | Note depth | `brief`, `standard`, `deep` | One-page brief, IMRaD, per-figure reading |
 | Citation format | `apa`, `nature`, `gbt7714` | Reference style |
-| Journal list | Shipped 17 pages/sections, or custom | Which pages “find new papers” opens |
+| Journal list | Shipped 17 pages/sections, or custom | Which pages "find new papers" opens |
 
-Defaults are `zh-CN`, VS Code, balanced, auto, deep, APA, and the shipped `journals.json`. “Use defaults” is a valid answer.
+Defaults are `zh-CN`, VS Code, balanced, auto, deep, APA, and the shipped `journals.json`. "Use defaults" is a valid answer.
 
 ### 2.2 The loop
 
@@ -181,13 +216,13 @@ papers/
 
 ---
 
-## 3. The two core functions
+## 3. The core functions
 
-Both are triggered by **plain language**, not by a flag. The agent recognises the intent and drives the scripts.
+All of them are triggered by **plain language**, not by a flag. The agent recognises the intent and drives the scripts.
 
-### 3.1 New-paper briefing — “找新文献”
+### 3.1 New-paper briefing — "找新文献"
 
-**Trigger:** say `找新文献` / `最近有什么新文章` / `看看期刊新文章` / “recommend some recent papers”.
+**Trigger:** say `找新文献` / `最近有什么新文章` / `看看期刊新文章` / "recommend some recent papers".
 
 ```text
 找新文献。
@@ -209,9 +244,9 @@ What happens:
 
 Hard rules the agent follows:
 
-- Never search by topic, never guess from your notes or from the conversation. The journal list is the definition of what “new papers” means.
+- Never search by topic, never guess from your notes or from the conversation. The journal list is the definition of what "new papers" means.
 - The English title is authoritative; the Chinese line is machine translation for scanning only.
-- A missing translation shows “暂缺” — never an invented title.
+- A missing translation shows "暂缺" — never an invented title.
 - Cloudflare / human-verification pages are handed to you: complete the check in the opened Chrome window and rerun the same command. The scan never auto-refreshes.
 
 Tuning:
@@ -223,9 +258,9 @@ python3 main.py --new-literature --days 3        # optional date filter; default
 python3 main.py --new-literature --no-translate  # English-only list
 ```
 
-### 3.2 Classic-paper reading — “经典文献分享”
+### 3.2 Classic-paper reading — "经典文献分享"
 
-**Trigger:** say `把 <DOI / URL / PDF> 当作一篇经典文献来读` / `经典文献分享` / “do a deep read of this classic”.
+**Trigger:** say `把 <DOI / URL / PDF> 当作一篇经典文献来读` / `经典文献分享` / "do a deep read of this classic".
 
 ```text
 把 10.1073/pnas.2510972122 当作一篇经典文献来读。
@@ -238,9 +273,9 @@ The agent will:
 1. build the evidence pack (`--doi` / `--url` / `--pdf`);
 2. find the paper's **prehistory** (who it answers), the **competing explanations of its time** (at least two, each with the criterion it depends on), and the **later tests or corrections**;
 3. write `## 0. 文献坐标` with a `年份 | 工作 | 核心贡献 | 与本文的关系` table of at least 5 data rows;
-4. cite at least **10 external works** for a deep read (**15** for a review), each with a DOI; unverifiable entries are marked “自动构造，需核对”;
-5. state explicitly **which competing explanations the evidence rules out and which it does not** — “not discussed” is not “ruled out”;
-6. say “这部分检索未覆盖” instead of padding the list with unread papers;
+4. cite at least **10 external works** for a deep read (**15** for a review), each with a DOI; unverifiable entries are marked "自动构造，需核对";
+5. state explicitly **which competing explanations the evidence rules out and which it does not** — "not discussed" is not "ruled out";
+6. say "这部分检索未覆盖" instead of padding the list with unread papers;
 7. embed **original figures** from the evidence packs and give each one a `> **读图要点**` reading block;
 8. finish with `--check-note --fix` and `--index`.
 
@@ -255,11 +290,49 @@ Minimum external works by depth:
 
 Figures are not optional here either: a review must embed at least **3** original figures, a deep note at least **3**; `--check-note` reports `review_without_figures` as an error.
 
+### 3.3 Thematic review — "主题综述"
+
+**Trigger:** say `写一篇"<主题>"的主题综述，锚定论文是 <DOI>` / "梳理一下这个方向的研究".
+
+This is a **different route** from "找新文献". The journal scan answers *what did these journals publish lately*; a thematic review answers *what does the evidence say about this question*.
+
+```bash
+python3 main.py --thematic-review "<topic>" --anchor-doi "10.xxxx/yyyy"
+python3 main.py --thematic-review "<topic>" --refs "10.x/yyy,10.z/www" --from-year 1990
+python3 main.py --thematic-review "<topic>" --anchor-doi <DOI> --max-refs 30 --no-forward
+```
+
+The command writes no prose. It produces a verified working set in `.raw/reviews/<slug>/`:
+
+| File | Content |
+| :--- | :--- |
+| `candidates.md` | Numbered candidates with roles, titles, journals, DOIs and the abstracts that Crossref actually deposited |
+| `references.json` | The structured verification result, including each entry's default evidence tier |
+| `factcheck.md` | The human fact-check sheet: metadata to confirm, claims to anchor, checks a machine cannot do |
+
+Then the agent writes `papers/<slug>.md` from `templates/thematic_review.md`: the anchor paper, a citation-network table covering prehistory / rivals / later tests, at least two competing explanations with the criterion each relies on, a later-tests section ("检索未覆盖" when nothing was searched), evidence tiers on every key claim, and a human fact-check section.
+
+**Resolution is not identity.** A DOI that resolves may be a *different* paper than the one you meant — a plausible-looking DOI invented by mistake often resolves to something real. So `--refs` accepts `doi|expected title`, one per line, and the title is compared against what Crossref returns:
+
+```text
+--refs "10.1038/s41586-020-2649-2|Array programming with NumPy"
+```
+
+Three failure kinds are reported separately, and none of them may be replaced by a guessed DOI:
+
+| Kind | Meaning | What to do |
+| :--- | :--- | :--- |
+| `not_found` | The DOI does not exist | Check the DOI against the publisher page |
+| `temporarily_unavailable` | Crossref was throttled or unreachable | Rerun the command |
+| `title_mismatch` | It resolves to another paper | Fix the DOI or the expected title |
+
+The same route verifies each topic candidate against Crossref for title, authors, year, journal and type, and pulls the abstract when the publisher deposited one. Entries that fail verification stay "待核验" and must not be cited as fact.
+
 ---
 
 ## 4. Why the route goes through the web
 
-This is the part that makes the output different from “paste a PDF into a chat window”.
+This is the part that makes the output different from "paste a PDF into a chat window".
 
 **The publisher's page is the only place where the figures, the caption, the supplementary material and the version of record coexist.** Everything else is a second-hand copy.
 
@@ -302,7 +375,8 @@ All of these have copy-paste prompts in [PROMPTS.md](PROMPTS.md). Same trigger s
 | **Single paper, URL** | `精读这篇论文：<URL>` | The same, with a note on whether the page needed a login or a human check |
 | **PDF only** | `精读 input_pdfs/<file>.pdf` | The DOI is extracted from the PDF; browser figures are still preferred if a DOI exists |
 | **Batch PDFs** | `批量精读 input_pdfs/ 下的所有 PDF` | One note per PDF, processed one at a time, plus a summary table of title / year / journal / text source / figure source / figure count / failures |
-| **Review (multi-paper)** | `围绕"<主题>"做一篇文献综述` | A structured review: search and inclusion criteria, consensus vs controversy vs evidence strength, DOI per paper, links to local notes, **at least 3 original figures** with reading blocks, and explicit “待补检索” markers where evidence is thin |
+| **Review (multi-paper)** | `围绕"<主题>"做一篇文献综述` | A structured review: search and inclusion criteria, consensus vs controversy vs evidence strength, DOI per paper, links to local notes, **at least 3 original figures** with reading blocks, and explicit "待补检索" markers where evidence is thin |
+| **Thematic review** | `写一篇"<主题>"的主题综述` | The Crossref-verified route of §3.3: anchor paper, citation network, competing explanations, later tests, evidence tiers, human fact-check section |
 | **Reviewer-style re-read** | `按"审稿人"视角重读 papers/<slug>.md` | A critique list, not a rewrite: core claim, weakest link, assumptions and boundary conditions, whether the figures really support the text, and the three cheapest checks to run next |
 | **Note health check** | `运行 --check-note --fix` | Every remaining error explained, image files verified by magic bytes, genuinely missing figures marked rather than deleted |
 | **Index maintenance** | `检查 papers/ 下所有笔记` | Missing front matter reported, `--index` re-run, and duplicate or inconsistent rows in `papers/INDEX.md` listed |
@@ -314,11 +388,24 @@ Two structural rules apply to every task:
 - **The scripts never write review prose.** A generator that fills every section makes a shallow note look like a close reading. The scripts produce evidence; the agent writes.
 - **Every key claim carries an evidence anchor**: `（第 3 页）` for PDF, `（原文 §Results 第 2 段）` for web, `（图 2）` for a figure.
 
+### 5.1 How the notes are written
+
+The agent's writing contract is in `rules/WRITING_STYLE.md`, and it is short enough to state here:
+
+| Requirement | What it means in practice |
+| :--- | :--- |
+| **平实 — plain** | A term is explained the first time it appears (Chinese first, the English in brackets); numbers carry their unit and their conditions; "large" becomes a measurement |
+| **逻辑 — logical** | The note moves question → evidence → mechanism → boundary, and labels each key claim with its evidence tier: `【直证】`, `【转述】`, `【推断】`, `【评估】`, `【未核实】` |
+| **教程 — tutorial** | A reader new to the field can follow it: the vocabulary is taught in context, each figure gets a "读图要点" block that says how to read it, and each section opens with the shortest path through it |
+| **克制 — restrained** | No superlatives; boundary conditions, sample limits and model assumptions are stated; verbs are calibrated — *shows*, *suggests*, *the authors argue*, *I judge* — and the agent's own assessment is never written as the paper's conclusion |
+
+The tension between "tutorial" and "restrained" is resolved one way: **explain more, claim less.** `--check-note` warns when a note has no labelled opening takeaway, and flags unverifiable superlatives.
+
 ---
 
 ## 6. The Python code
 
-The whole system is about 6,800 lines of dependency-light Python. It is deliberately split so that the evidence layer and the writing layer never mix.
+The system is about 9,000 lines of dependency-light Python, deliberately split so that the evidence layer and the writing layer never mix.
 
 ### 6.1 Entry points
 
@@ -326,24 +413,26 @@ The whole system is about 6,800 lines of dependency-light Python. It is delibera
 | :--- | :--- |
 | `main.py` | Thin wrapper around `scripts/cli.py` |
 | `doctor.py` | Verbose environment diagnostics, `--json`, `--install`, `--launch-chrome` |
-| `install.py` / `install.sh` / `install.ps1` | Cross-platform installer |
+| `install.py` / `install.sh` / `install.ps1` | Optional cross-platform installer |
 | `uninstall.py` | Removes the package and build caches; never touches `papers/` or `.raw/` |
 
 ### 6.2 Module map
 
 | Module | Lines | Responsibility |
 | :--- | :--- | :--- |
-| `scripts/cli.py` | 588 | Argument parsing, command dispatch, human-readable output |
-| `scripts/fetch_paper.py` | 635 | Crossref metadata, article-page text, DOI extraction from PDFs |
-| `scripts/browser.py` | 599 | Chrome DevTools Protocol client: launch, navigate, wait, screenshot, fetch image assets |
-| `scripts/figures.py` | 260 | Figure discovery, download, `image_magic` validation, manifest writing |
-| `scripts/evidence.py` | 654 | Evidence-pack assembly: `paper.json`, `fulltext.md`, `figures/manifest.json`, `README.md` |
-| `scripts/note_check.py` | 931 | The QA engine: figures, image paths, template residue, hype words, `$$` balance, GitHub alerts, citation network, `--fix` |
 | `scripts/journal_watch.py` | 1131 | Journal page parsers (`nature`, `science_*`, `epsl`, `agu`, `geology_*`, `gji`, `pnas`), candidate listing |
+| `scripts/note_check.py` | 1082 | The QA engine: figures, image paths, template residue, hype words, `$$` balance, GitHub alerts, citation network, `--fix` |
+| `scripts/thematic_review.py` | 1079 | Thematic review: Crossref topic search, per-item verification, title matching, citation network, working-set rendering |
+| `scripts/updater.py` | 754 | Release check, fast-forward update, sparse-clone fallback, backup and restore of the profile |
+| `scripts/fetch_paper.py` | 669 | Crossref metadata, article-page text, DOI extraction from PDFs |
+| `scripts/evidence.py` | 654 | Evidence-pack assembly: `paper.json`, `fulltext.md`, `figures/manifest.json`, `README.md` |
+| `scripts/browser.py` | 599 | Chrome DevTools Protocol client: launch, navigate, wait, screenshot, fetch image assets |
+| `scripts/environment.py` | 401 | The environment scan: uv → conda → venv → plain Python, and the recommended run command |
+| `scripts/preflight.py` | 341 | The session marker: docs, environment, profile, workspace role |
 | `scripts/translate.py` | 287 | Chinese machine translation of titles, with a cache and a geology term post-edit pass |
-| `scripts/updater.py` | 749 | Release check, fast-forward update, sparse-clone fallback, backup and restore of the profile |
-| `scripts/preflight.py` | 291 | The session marker: docs, environment, profile, workspace role |
-| `scripts/onboarding.py` | 156 | Preference schema and the question set |
+| `scripts/figures.py` | 260 | Figure discovery, download, `image_magic` validation, manifest writing |
+| `scripts/http_json.py` | 233 | The polite HTTP client: polite-pool headers, request spacing, 429/5xx backoff, classified failures |
+| `scripts/onboarding.py` | 178 | Preference schema and the question set |
 | `scripts/config.py` | 165 | Paths, profile choices, reference targets |
 | `scripts/version.py` | 3 | Single source of truth for the version |
 
@@ -370,21 +459,33 @@ The whole system is about 6,800 lines of dependency-light Python. It is delibera
 | `width` / `height` / `bytes` | Dimensions and size |
 | `is_body_figure` | Whether it looks like a body figure rather than page chrome |
 
+A thematic review has its own working set, `.raw/reviews/<slug>/`, with `candidates.md`, `references.json` and `factcheck.md`.
+
 ### 6.4 The QA engine
 
 `scripts/note_check.py` is the piece that makes the guarantees enforceable rather than aspirational.
 
 | Check | Severity | What it enforces |
 | :--- | :--- | :--- |
-| `missing_image`, `broken_image` | error | Every referenced figure exists, is non-zero and has real image magic bytes |
-| `invalid_image_path` | error | Only `assets/<slug>/...` inside `papers/` — never `../assets/`, absolute paths, `file://` or `<img>` |
-| `placeholder_prose`, `hype_words` | error | No template residue and no unverifiable superlatives |
-| `unbalanced_display_math`, `github_alert_syntax` | error | `$$` pairs; blockquotes instead of `> [!NOTE]`, which VS Code renders literally |
-| `missing_related_context`, `missing_citation_table` | error | The 文献坐标 section and a ≥5-row citation table |
-| `thin_reference_context`, `no_external_references` | error | External-work minimums: brief 3, standard 6, deep 10, review 15 |
+| `missing_image`, `empty_image`, `not_a_file` | error | Every referenced figure exists, is a file and is non-zero |
+| `invalid_image_magic` | warning | The file really is an image, not an HTML error page renamed `.png` |
+| `wrong_relative_path`, `outside_assets`, `legacy_assets_layout` | error | Only `assets/<slug>/...` inside `papers/` — never `../assets/`, absolute paths, `file://` or `<img>` |
+| `placeholder_content` | error | No template residue |
+| `hyperbole` | warning | No unverifiable superlatives |
+| `unbalanced_display_math` | warning | `$$` pairs |
+| `github_alert_syntax` | error | Blockquotes instead of `> [!NOTE]`, which VS Code renders literally |
+| `missing_related_context` | error | The 文献坐标 section is present |
+| `missing_citation_table` | error / warning | A ≥5-row citation table (error for a thematic review) |
+| `thin_reference_context`, `no_external_references` | warning / error | External-work minimums: brief 3, standard 6, deep 10, review 15 |
+| `missing_reference_section` | error | There is a `## 参考文献` section |
+| `missing_anchor_paper`, `anchor_not_in_references` | error | A thematic review names its anchor paper and lists it in the references |
+| `missing_competing_explanations`, `missing_later_tests`, `missing_factcheck_section` | error | The three structural parts of a thematic review |
+| `missing_evidence_tiers`, `thin_evidence_tiers` | error / warning | Key claims carry `【直证】/【转述】/【推断】/【评估】/【未核实】`, at least three kinds |
 | `references_without_doi`, `duplicate_reference_doi` | warning | Every external work needs a DOI; no duplicates |
+| `missing_front_matter` | warning | The YAML front matter is complete |
 | `review_without_figures` | error | A review embeds at least 3 usable original figures |
 | `note_without_figures` | warning | A deep note embeds at least 3 |
+| `missing_lead_summary` | warning | The note opens with a labelled takeaway |
 
 `--fix` rewrites only unambiguous things: legacy figure libraries are migrated into `papers/assets/`, links are rewritten, and alert markers become labelled blockquotes. It never rewrites your prose.
 
@@ -394,12 +495,12 @@ The whole system is about 6,800 lines of dependency-light Python. It is delibera
 python3 -m unittest discover tests -v
 ```
 
-Five suites cover the parsers, the QA engine, the preflight gate, the translation cache and the updater:
+Nine suites cover the parsers, the QA engine, the preflight gate, the translation cache, the updater, the environment scan, the HTTP layer, the thematic review and the console helpers:
 
 ```text
-tests/test_journal_watch.py   tests/test_note_check.py
-tests/test_preflight.py       tests/test_translate.py
-tests/test_updater.py
+tests/test_journal_watch.py   tests/test_note_check.py   tests/test_preflight.py
+tests/test_translate.py       tests/test_updater.py      tests/test_environment.py
+tests/test_http_json.py       tests/test_thematic_review.py  tests/test_console.py
 ```
 
 ### 6.6 Extending it
@@ -407,6 +508,7 @@ tests/test_updater.py
 - **Add a journal**: add an entry to `.geo-reader/journals.json` — `key`, `name`, `parser`, `url` (or `url_template` + `volumes`), `enabled`. No code change unless the page layout is unusual.
 - **Add a parser**: implement it in `scripts/journal_watch.py` and register the name in the parser table.
 - **Add a QA rule**: extend `scripts/note_check.py` and add a case to `tests/test_note_check.py`. Rules are data, not prose: every issue has a code, a severity and a line.
+- **Add an environment**: extend `ENVIRONMENT_ORDER` and the matching candidate builder in `scripts/environment.py`; `doctor.py` and `--preflight` pick it up automatically.
 - **Change the version**: edit `scripts/version.py` only; `pyproject.toml` and `setup.py` mirror it, and a release check compares all three.
 
 ---
@@ -418,6 +520,7 @@ tests/test_updater.py
 | Literature command exits 2 | Marker missing, stale or from another version | Run `python3 main.py --preflight`; do not bypass with `--no-preflight` |
 | Marker says `profile_missing` | Preflight ran before the profile existed | Finish onboarding, write the profile, rerun preflight |
 | Preflight reports a missing doc | `AGENTS.md` / `MEMORY.md` / `LESSONS.md` absent | Restore from the release; do not create empty files |
+| `Env:` says no usable interpreter | No `uv`, no `conda`, no venv, and `PATH` has only the Store stub | Follow the prepare command on the `Env:` line, e.g. `uv sync` |
 | Chrome not found | Browser-first figures unavailable | Install Chrome, or accept `--browser off` and PDF fallback |
 | Cloudflare challenge | Human check required | Complete it in the opened Chrome window, then rerun; no auto-refresh |
 | Zero figures | JS viewer, paywall or selector drift | Read manifest warnings; retry `--browser auto`; report the failure honestly |
@@ -425,15 +528,17 @@ tests/test_updater.py
 | Image missing in preview | Path outside `papers/` | `--check-note --fix`; the valid form is `assets/<slug>/...` |
 | `thin_reference_context` | The note summarises one paper only | Add prehistory, rivals and later tests, or lower `note_depth` |
 | `review_without_figures` | The review has no original figures | Run `--doi` for the key works, embed `assets/<slug>/fig_XX.png`, add a `> **读图要点**` block per figure |
+| Thematic review reports `title_mismatch` | The DOI resolves to a different paper | Fix the DOI, or pass the expected title as `--refs "doi\|expected title"` |
+| Thematic review reports `temporarily_unavailable` | Crossref throttled or unreachable | Rerun the command; it is transient, unlike `not_found` |
 | `--check-update` says offline | GitHub unreachable | Not an error; retry with `--refresh`, or set `GEO_READER_NO_UPDATE_CHECK=1` |
 | `--update` refuses | Dirty code tree or diverged history | Commit or `git stash`; never `reset --hard` |
 | Journal list is empty | Page disabled, parser drift, or advanced volumes | Check `enabled` / `url`; update EPSL `volumes`; fix the parser |
-| Chinese title shows “暂缺” | Translation rate limit or outage | Rerun `--new-literature`; cached titles are reused; never invent one |
+| Chinese title shows "暂缺" | Translation rate limit or outage | Rerun `--new-literature`; cached titles are reused; never invent one |
 | `python` exits with code 49 | The Microsoft Store alias stub on `PATH` | Use `uv sync` + `uv run python main.py …`, or install Python from python.org with **Add Python to PATH** |
 | CLI output is mojibake | The console encoded the pipe as GBK/cp936 | Fixed since 0.5.1 (stdout is forced to UTF-8); on older copies set `PYTHONIOENCODING=utf-8` |
 | `UnicodeEncodeError: 'gbk' codec` | An emoji reached a cp936 console | Fixed since 0.5.1 (console markers are ASCII); on older copies set `PYTHONIOENCODING=utf-8` |
 
-More: [rules/TROUBLESHOOTING.md](rules/TROUBLESHOOTING.md), [rules/JOURNALS.md](rules/JOURNALS.md), [rules/MARKDOWN_SPEC.md](rules/MARKDOWN_SPEC.md), [LESSONS.md](LESSONS.md).
+More: [rules/TROUBLESHOOTING.md](rules/TROUBLESHOOTING.md), [rules/JOURNALS.md](rules/JOURNALS.md), [rules/MARKDOWN_SPEC.md](rules/MARKDOWN_SPEC.md), [rules/WRITING_STYLE.md](rules/WRITING_STYLE.md), [LESSONS.md](LESSONS.md).
 
 ---
 
