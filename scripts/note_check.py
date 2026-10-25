@@ -39,6 +39,16 @@ PLACEHOLDER_MARKERS = (
 
 FORBIDDEN_WORDS = ("颠覆一切", "彻底终结", "空前重大突破", "完美解决", "前所未有")
 
+# The note is read by a colleague and by someone who just entered the
+# subfield. Both need the takeaway in plain words, up front, as a labelled
+# blockquote. This is the one mechanical part of the writing-style contract
+# (rules/WRITING_STYLE.md) that a script can actually check.
+LEAD_SUMMARY_LABELS = ("一句话结论", "综述范围与核心判断", "核心结论", "核心问题")
+LEAD_SUMMARY_RE = re.compile(
+    r"^[ \t]*>[ \t]*\*\*(?P<label>[^*]+)\*\*[ \t]*$",
+    re.M,
+)
+
 # VS Code's built-in Markdown preview does not understand GitHub alert
 # syntax; it prints "> [!NOTE]" as literal text. Catch it before delivery.
 ALERT_RE = re.compile(
@@ -448,6 +458,25 @@ def validate_note(note_path: Path, strict: bool = False) -> Dict[str, object]:
                     "GitHub alert 语法 > [!{}] 在 VS Code 内置预览中会原样显示为文字；"
                     "改用 > **{}** 加引用块的写法（--fix 可自动改写，标签措辞需人工核对）"
                 ).format(kind, ALERT_LABELS.get(kind.lower(), "要点")),
+            }
+        )
+
+    # Opening takeaway: a labelled blockquote the reader can quote on its own.
+    lead_labels = [
+        match.group("label").strip()
+        for match in LEAD_SUMMARY_RE.finditer(text)
+        if match.group("label").strip() in LEAD_SUMMARY_LABELS
+    ]
+    if not lead_labels:
+        issues.append(
+            {
+                "severity": "warning",
+                "code": "missing_lead_summary",
+                "line": 0,
+                "message": (
+                    "缺少带标签的开篇结论块（{}）：读者应当能在第一屏读到一句话结论，"
+                    "而不是自己从正文里概括。"
+                ).format("、".join(LEAD_SUMMARY_LABELS[:2])),
             }
         )
 

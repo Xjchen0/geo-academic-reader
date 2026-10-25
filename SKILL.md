@@ -216,6 +216,35 @@ Manifest fields that matter most: `caption`, `origin`, `source_url`, `page`, `wi
 
 ---
 
+## ✍️ Writing Style (P0)
+
+The note has two readers at once: a colleague who knows the field, and a student who entered it
+last month. Write **plain academic prose with research logic and a little tutorial patience** —
+never jargon as a substitute for explanation, never enthusiasm as a substitute for evidence.
+
+| Requirement | What it means |
+| :--- | :--- |
+| **平实** | Every term is explained the first time it appears; every number carries its unit and condition |
+| **逻辑** | Question → evidence → mechanism → boundary, in that order, with the joins visible |
+| **教程** | A newcomer can follow the argument and learn the vocabulary of the subfield |
+| **克制** | Claims are bounded; unknowns are named |
+
+Nine habits carry it:
+
+1. Define a term the first time it appears — Chinese term, English in parentheses, one clause of meaning.
+2. Numbers carry units, conditions and error bars; replace adjectives with measurements.
+3. Tell the reader how to look at a figure, and what that figure cannot settle.
+4. Give the shortest path through a dense result ("换句话说，……").
+5. Label the strength of each link: 【直证】/【转述】/【推断】/【评估】/【未核实】.
+6. Calibrate the verbs: 表明 (data) / 提示 (suggests) / 作者认为 (authors' claim) / 我判断 (your call).
+7. Write 「作者」or「本文」, never 「我们」.
+8. State boundary conditions, sample limits and parameter sensitivity.
+9. Say "检索未覆盖" / "原文未提供" rather than guessing a value.
+
+Full contract with examples: `rules/WRITING_STYLE.md`.
+
+---
+
 ## 🕸 Classic-Paper Citation Network (P0)
 
 A classic-paper note is a position in a literature, not a summary of one PDF. The note must contain a `## 0. 文献坐标` section with:
@@ -256,7 +285,7 @@ python3 main.py --check-note --fix          # all papers/*.md
 python3 main.py --check-note --strict       # warnings become errors
 ```
 
-Checks: missing images, zero-byte files, invalid image magic bytes, files outside `papers/assets/`, legacy root-level assets, non-standard relative paths, leftover template markers, hyperbole, odd number of `$$`, GitHub alert syntax, missing 文献坐标 / 参考文献 sections, too few external works, missing citation table, references without DOI, duplicate DOIs, reviews without figures.
+Checks: missing images, zero-byte files, invalid image magic bytes, files outside `papers/assets/`, legacy root-level assets, non-standard relative paths, leftover template markers, hyperbole, a missing labelled opening takeaway, odd number of `$$`, GitHub alert syntax, missing 文献坐标 / 参考文献 sections, too few external works, missing citation table, references without DOI, duplicate DOIs, reviews without figures.
 
 `--fix` rewrites a path only when the intended target is unambiguous, migrates figures from a legacy root `assets/` folder into `papers/assets/` (updating the note, manifest, and `paper.json`), and converts `> [!NOTE]`-style markers into labelled blockquotes. It does not invent citations. Do not delete a figure merely to make the report clean; report it.
 

@@ -178,5 +178,54 @@ class ReviewFigureTests(unittest.TestCase):
         self.assertIn("missing_image", codes)
 
 
+class LeadSummaryTests(unittest.TestCase):
+    """The opening takeaway must be a labelled blockquote a reader can quote.
+
+    This is the one mechanical part of the writing-style contract
+    (rules/WRITING_STYLE.md): a note that opens without a plain, labelled
+    conclusion asks the reader to summarise it themselves.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp_path = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write(self, body: str) -> Path:
+        note = self.tmp_path / "note.md"
+        note.write_text(
+            FRONT.format(depth="brief", body=body) + REFS.format(entries=_entry(1)),
+            encoding="utf-8",
+        )
+        return note
+
+    @staticmethod
+    def _codes(report: dict) -> set:
+        return {issue["code"] for issue in report["issues"]}
+
+    def test_note_without_a_labelled_takeaway_warns(self):
+        report = validate_note(self._write("正文段落。\n"))
+        self.assertIn("missing_lead_summary", self._codes(report))
+        lead = [i for i in report["issues"] if i["code"] == "missing_lead_summary"]
+        self.assertEqual(lead[0]["severity"], "warning")
+
+    def test_labelled_takeaway_satisfies_the_rule(self):
+        body = "> **一句话结论**\n>\n> 一句话说完核心结论及其成立条件。\n"
+        report = validate_note(self._write(body))
+        self.assertNotIn("missing_lead_summary", self._codes(report))
+
+    def test_review_lead_label_also_counts(self):
+        body = "> **综述范围与核心判断**\n>\n> 综述覆盖的范围与核心判断。\n"
+        report = validate_note(self._write(body))
+        self.assertNotIn("missing_lead_summary", self._codes(report))
+
+    def test_unlabelled_blockquote_does_not_count(self):
+        body = "> 这是一段没有标签的引用块。\n"
+        report = validate_note(self._write(body))
+        self.assertIn("missing_lead_summary", self._codes(report))
+
+
 if __name__ == "__main__":
     unittest.main()
